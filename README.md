@@ -1,2 +1,2 @@
-# light-cacher
-CESS lightweight cache node for building a decentralized content distribution network
+# cess-dcdn-components
+CESS cess dcdn components for building a decentralized content distribution network
