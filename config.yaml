@@ -1,0 +1,28 @@
+# The rpc endpoint of the chain node
+Rpc:
+  # test network
+  - "wss://testnet-rpc0.cess.cloud/ws/"
+  - "wss://testnet-rpc1.cess.cloud/ws/"
+  - "wss://testnet-rpc2.cess.cloud/ws/"
+# The storage network you want to connect to, "mainnet" or "testnet"
+Network: 
+# Bootstrap Nodes
+Boot:
+  # test network
+  - "_dnsaddr.boot-bucket-testnet.cess.cloud"
+# CESS account mnemonic of cacher
+Mnemonic: "..."
+# Service workspace
+Workspace: "/"
+# P2P communication port
+P2P_Port: 4001
+
+# User Files Cacher config
+# File cache size, default 512G, (unit is byte)
+CacheSize:
+# File cache expiration time, default 3*60 minutes (unit is minutes)
+Expiration:
+# Directory to store file cache, default path: Workspace/filecache/
+CacheDir:
+# Price of downloading a single fragment (unit is 1/10^18 CESS or TCESS, is an integer)
+CachePrice: 
