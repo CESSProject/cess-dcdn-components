@@ -28,10 +28,11 @@ const (
 var TempDir = "./temp/"
 
 type CacheInfo struct {
-	LoadRatio    float64 `json:"load_ratio"`    // cache load ratio,
-	Status       string  `json:"status"`        // the status of the cache service now, "busy" or "idle"
-	Price        uint64  `json:"price"`         // the price of the cache service, in fragments
-	Account      []byte  `json:"account"`       // the account id of cacher
+	LoadRatio    float64 `json:"load_ratio"` // cache load ratio,
+	Status       string  `json:"status"`     // the status of the cache service now, "busy" or "idle"
+	Price        uint64  `json:"price"`      // the price of the cache service, in fragments
+	Account      []byte  `json:"account"`    // the account id of cacher
+	CreditLimit  int     `json:"credit_limit"`
 	CreditPoints int     `json:"credit_points"` // user’s credit on the cacher, one point will be deducted for downloaded a file fragment, and be added for recharge
 }
 

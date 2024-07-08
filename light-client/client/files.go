@@ -346,8 +346,8 @@ func (c *Client) DownloadFileFromGateway(url, fpath, fhash string) error {
 	return nil
 }
 
-func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum, threadNum int) (map[peer.ID][]string, error) {
-	cachedPeers := make(map[peer.ID][]string)
+func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum, threadNum int) (map[peer.ID]ctype.QueryResponse, error) {
+	cachedPeers := make(map[peer.ID]ctype.QueryResponse)
 	peerNum := c.cachers.GetPeersNumber()
 	if cacherNum > peerNum {
 		cacherNum = peerNum
@@ -382,10 +382,9 @@ func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum
 					continue
 				}
 				c.cachers.Feedback(peer.ID.String(), true)
-
 				if resp.Status == ctype.STATUS_HIT {
 					lock.Lock()
-					cachedPeers[peer.ID] = resp.CachedFiles
+					cachedPeers[peer.ID] = resp
 					lock.Unlock()
 				}
 				//TODO: about credit
@@ -396,14 +395,14 @@ func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum
 	return cachedPeers, nil
 }
 
-func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, cachedPeer map[peer.ID][]string) []string {
+func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, cachedPeer map[peer.ID]ctype.QueryResponse) []string {
 	cachedFragments := map[string]struct{}{}
 	res := make([]string, 0)
 	dl, dld := 0, 0
 	lock := sync.Mutex{}
 	wg := sync.WaitGroup{}
 	wg.Add(len(cachedPeer))
-	for id, fragments := range cachedPeer {
+	for id, resp := range cachedPeer {
 		go func(id peer.ID, fragments []string) {
 			defer wg.Done()
 			for {
@@ -448,7 +447,7 @@ func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, 
 					lock.Unlock()
 				}
 			}
-		}(id, fragments)
+		}(id, resp.CachedFiles)
 	}
 	wg.Wait()
 	return res

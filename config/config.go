@@ -38,31 +38,65 @@ Expiration:
 CacheDir:
 # Price of downloading a single fragment (unit is 1/10^18 CESS or TCESS, is an integer)
 CachePrice: 
+# The number of free downloads allowed for users
+FreeDownloads:
+`
+	CONTRACT_PROFILE_TEMPLATE = `
+# Cache protocol config
+# The Id of chain where the EVM contract is deployed
+ChainId:
+# Ethereum gas free cap (default is 108694000460)
+GasFreeCap:
+#Ethereum gas limit (default is 30000000)
+GasLimit:
+#Cache protocol smart contracts for node registration, order and revenue management, etc.
+ContractAddress:
+# NFT Token Id that needs to be bound to the cache node(license for cache node to join network)
+NodeTokenId:
+# Cache Node's ethereum account private key (Hexadecimal string, not including '0x')
+NodeAccPrivateKey:
+Token owner's ethereum account address (Hexadecimal string, including '0x')
+TokenAccAddress:
+The signature of the token owner's account on the message pair, obtained through the 'eth-tools'
+TokenAccSign:
 `
 
-	DEFAULT_CONFIG_PATH  = "./config.yaml"
-	TESTNET_PROTO_PREFIX = "/testnet"
-	MAINNET_PROTO_PREFIX = "/mainnet"
-	DEVNET_PROTO_PREFIX  = "/devnet"
-	DEFAULT_CACHE_PATH   = "./cache/"
-	DEFAULT_WORKSPACE    = "./workspace/"
-	DEFAULT_CACHE_PRICE  = 10000000000000000
+	DEFAULT_CONFIG_PATH    = "./config.yaml"
+	TESTNET_PROTO_PREFIX   = "/testnet"
+	MAINNET_PROTO_PREFIX   = "/mainnet"
+	DEVNET_PROTO_PREFIX    = "/devnet"
+	DEFAULT_CACHE_PATH     = "./cache/"
+	DEFAULT_WORKSPACE      = "./workspace/"
+	DEFAULT_CACHE_PRICE    = 10000000000000000
+	DEFAULT_GAS_FREE_CAP   = 108694000460
+	DEFAULT_GAS_LIMIT      = 30000000
+	DEFAULT_DOWNLOAD_POINT = 4
+	CACHE_BLOCK_SIZE       = 8 * 1024 * 1024
 )
 
 var config Config
 
 type Config struct {
-	CachePrice uint64   `name:"CachePrice" toml:"CachePrice" yaml:"CachePrice"`
-	CacheDir   string   `name:"CacheDir" toml:"CacheDir" yaml:"CacheDir"`
-	Expiration int64    `name:"Expiration" toml:"Expiration" yaml:"Expiration"`
-	CacheSize  int64    `name:"CacheSize" toml:"CacheSize" yaml:"CacheSize"`
-	Mnemonic   string   `name:"Mnemonic" toml:"Mnemonic" yaml:"Mnemonic"`
-	Rpc        []string `name:"Rpc" toml:"Rpc" yaml:"Rpc"`
-	Boot       []string `name:"Boot" toml:"Boot" yaml:"Boot"`
-	P2PPort    int      `name:"P2P_Port" toml:"P2P_Port" yaml:"P2P_Port"`
-	WorkSpace  string   `name:"WorkSpace" toml:"WorkSpace" yaml:"WorkSpace"`
-	Network    string   `name:"Network" toml:"Network" yaml:"Network"`
-	KeyPair    signature.KeyringPair
+	CachePrice        uint64   `name:"CachePrice" toml:"CachePrice" yaml:"CachePrice"`
+	CacheDir          string   `name:"CacheDir" toml:"CacheDir" yaml:"CacheDir"`
+	Expiration        int64    `name:"Expiration" toml:"Expiration" yaml:"Expiration"`
+	CacheSize         int64    `name:"CacheSize" toml:"CacheSize" yaml:"CacheSize"`
+	Mnemonic          string   `name:"Mnemonic" toml:"Mnemonic" yaml:"Mnemonic"`
+	Rpc               []string `name:"Rpc" toml:"Rpc" yaml:"Rpc"`
+	Boot              []string `name:"Boot" toml:"Boot" yaml:"Boot"`
+	P2PPort           int      `name:"P2P_Port" toml:"P2P_Port" yaml:"P2P_Port"`
+	WorkSpace         string   `name:"WorkSpace" toml:"WorkSpace" yaml:"WorkSpace"`
+	Network           string   `name:"Network" toml:"Network" yaml:"Network"`
+	ChainId           int64    `name:"ChainId" toml:"ChainId" yaml:"ChainId"`
+	GasFreeCap        int64    `name:"GasFreeCap" toml:"GasFreeCap" yaml:"GasFreeCap"`
+	GasLimit          uint64   `name:"GasLimit" toml:"GasLimit" yaml:"GasLimit"`
+	ContractAddress   string   `name:"ContractAddress" toml:"ContractAddress" yaml:"ContractAddress"`
+	NodeTokenId       string   `name:"NodeTokenId" toml:"NodeTokenId" yaml:"NodeTokenId"`
+	NodeAccPrivateKey string   `name:"NodeAccPrivateKey" toml:"NodeAccPrivateKey" yaml:"NodeAccPrivateKey"`
+	TokenAccAddress   string   `name:"TokenAccAddress" toml:"TokenAccAddress" yaml:"TokenAccAddress"`
+	TokenAccSign      string   `name:"TokenAccSign" toml:"TokenAccSign" yaml:"TokenAccSign"`
+	FreeDownloads     int      `name:"FreeDownloads" toml:"FreeDownloads" yaml:"FreeDownloads"`
+	KeyPair           signature.KeyringPair
 }
 
 func GetConfig() Config {
@@ -70,18 +104,10 @@ func GetConfig() Config {
 }
 
 func ParseConfig(fpath string) error {
-	if fpath == "" {
-		fpath = DEFAULT_CONFIG_PATH
-	}
-	viper.SetConfigFile(fpath)
-	viper.SetConfigType("yaml")
-	err := viper.ReadInConfig()
+
+	err := ParseCommonConfig(fpath, "yaml", &config)
 	if err != nil {
-		return errors.Wrap(err, "parse config file error")
-	}
-	err = viper.Unmarshal(&config)
-	if err != nil {
-		return errors.Wrap(err, "parse config file error")
+		return err
 	}
 
 	if config.CacheSize <= 32*1024*1024*1024 {
@@ -104,6 +130,9 @@ func ParseConfig(fpath string) error {
 	if config.CachePrice == 0 {
 		config.CachePrice = DEFAULT_CACHE_PRICE
 	}
+	if config.FreeDownloads == 0 {
+		config.FreeDownloads = DEFAULT_DOWNLOAD_POINT
+	}
 
 	if _, err := os.Stat(config.CacheDir); err != nil {
 		err = os.MkdirAll(config.CacheDir, 0755)
@@ -122,5 +151,22 @@ func ParseConfig(fpath string) error {
 		return errors.Wrap(err, "parse config file error")
 	}
 	config.KeyPair = keyPair
+	return nil
+}
+
+func ParseCommonConfig(fpath, ctype string, config interface{}) error {
+	if fpath == "" {
+		fpath = DEFAULT_CONFIG_PATH
+	}
+	viper.SetConfigFile(fpath)
+	viper.SetConfigType(ctype)
+	err := viper.ReadInConfig()
+	if err != nil {
+		return errors.Wrap(err, "parse config file error")
+	}
+	err = viper.Unmarshal(config)
+	if err != nil {
+		return errors.Wrap(err, "parse config file error")
+	}
 	return nil
 }

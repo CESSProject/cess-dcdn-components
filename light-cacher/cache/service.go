@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/CESSProject/cess-dcdn-components/config"
 	"github.com/CESSProject/cess-dcdn-components/light-cacher/ctype"
+	"github.com/CESSProject/cess-dcdn-components/protocol"
 	"github.com/CESSProject/p2p-go/core"
 	"github.com/CESSProject/p2p-go/pb"
 	"github.com/pkg/errors"
@@ -34,14 +36,18 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 		resp.Code = core.P2PResponseFailed
 		return resp, errors.Wrap(err, "read cache service error")
 	}
+
 	userAcc := hex.EncodeToString(extReq.AccountId)
 	switch extReq.Option {
 	case ctype.OPTION_DAIL:
+		credit := c.cmap.GetUserCredit(userAcc)
+		limit, _ := protocol.CheckPoint(credit, config.GetConfig().FreeDownloads, config.CACHE_BLOCK_SIZE)
 		info := ctype.CacheInfo{
 			LoadRatio:    c.GetLoadRatio(),
-			Account:      c.keyPair.PublicKey,
+			Account:      c.Account,
 			Price:        c.Price,
-			CreditPoints: c.cmap.GetUserCredit(userAcc).Point,
+			CreditLimit:  limit,
+			CreditPoints: credit.Point,
 		}
 		if reqNum > int64(BusyLine) && c.GetRequestNumber()-reqNum > 0 {
 			info.Status = ctype.CACHE_BUSY
@@ -59,7 +65,7 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 		resp.Length = uint32(len(res))
 		resp.Code = core.P2PResponseFinish
 	case ctype.OPTION_QUERY:
-		if !c.cmap.CheckCredit(userAcc, string(extReq.Data), string(extReq.Sign)) {
+		if !c.cmap.CheckCredit(userAcc, extReq.Data, extReq.Sign) {
 			extResp.Status = ctype.STATUS_FROZEN
 		} else if _, ok := c.taskQueue.Load(req.Datahash); ok {
 			extResp.Status = ctype.STATUS_LOADING
@@ -79,7 +85,7 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 		resp.Length = uint32(len(res))
 		resp.Code = core.P2PResponseFinish
 	case ctype.OPTION_DOWNLOAD:
-		if !c.cmap.CheckCredit(userAcc, string(extReq.Data), string(extReq.Sign)) {
+		if !c.cmap.CheckCredit(userAcc, extReq.Data, extReq.Sign) {
 			resp.Code = core.P2PResponseFailed
 			return resp, errors.Wrap(errors.New("not enough credit points"), "read cache service error")
 		}
@@ -122,6 +128,7 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 			resp.Code = core.P2PResponseFinish
 			//record crdit bill
 		}
+		c.cmap.SetUserCredit(userAcc, -1)
 		resp.Data = readBuf[:num]
 		resp.Length = uint32(num)
 		resp.Offset = req.Offset

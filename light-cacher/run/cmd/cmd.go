@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/CESSProject/cess-dcdn-components/config"
+	"github.com/CESSProject/cess-dcdn-components/contract"
 	"github.com/CESSProject/cess-dcdn-components/light-cacher/cache"
 	"github.com/CESSProject/cess-dcdn-components/light-cacher/ctype"
 	cess "github.com/CESSProject/cess-go-sdk"
@@ -57,6 +58,10 @@ func cmd_config() *cobra.Command {
 				log.Fatal("[err]", err)
 			}
 			_, err = f.WriteString(config.CACHE_PROFILE_TEMPLATE)
+			if err != nil {
+				log.Fatal("[err]", err)
+			}
+			_, err = f.WriteString(config.CONTRACT_PROFILE_TEMPLATE)
 			if err != nil {
 				log.Fatal("[err]", err)
 			}
@@ -146,9 +151,16 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		log.Println("init cess chain client error", err)
 		return
 	}
-	cacher := cache.NewCacher(chainSdk, cacheModule, peerNode, selector)
+	cli, err := contract.NewClient(
+		contract.AccountPrivateKey(conf.NodeAccPrivateKey),
+		contract.ChainID(conf.ChainId),
+		contract.ConnectionRpcAddresss(conf.Rpc),
+	)
+	cli.AddWorkContract(contract.DEFAULT_CACHE_PROTO_CONTRACT_NAME, conf.ContractAddress)
 
-	cacher.SetConfig(conf.KeyPair, conf.CachePrice)
+	cacher := cache.NewCacher(chainSdk, cacheModule, peerNode, selector, cli)
+
+	cacher.SetConfig(conf.KeyPair, conf.CachePrice, cli.Account.Bytes())
 	cacher.RestoreCacheFiles(conf.CacheDir)
 	cacher.RegisterP2pTsFileServiceHandle(cacher.ReadCacheService)
 

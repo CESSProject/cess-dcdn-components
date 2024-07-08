@@ -5,8 +5,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/CESSProject/cess-dcdn-components/contract"
 	"github.com/CESSProject/cess-dcdn-components/downloader"
+	"github.com/CESSProject/cess-dcdn-components/light-cacher/ctype"
 	"github.com/CESSProject/cess-dcdn-components/p2p"
+	"github.com/CESSProject/cess-dcdn-components/protocol"
 	"github.com/CESSProject/cess-go-sdk/chain"
 	"github.com/CESSProject/cess-go-tools/scheduler"
 	"github.com/CESSProject/p2p-go/core"
@@ -29,6 +32,9 @@ type Client struct {
 	*core.PeerNode
 	signature.KeyringPair
 	tmpDir      string
+	cli         *contract.Client
+	cmp         *protocol.CreditMap
+	osQueue     chan ctype.QueryResponse //order settlement queue
 	uploadQueue chan UploadStats
 }
 
@@ -65,17 +71,22 @@ func NewClient(chainCli chain.ChainClient, peerNode *core.PeerNode, cachers, sto
 	return nil
 }
 
-func (c *Client) RunDiscovery(ctx context.Context, bootNode string) error {
-	ch := make(chan peer.AddrInfo, 256)
+// func (c *Client) PaymentCacheOrder() error {
+// 	for resp:=range c.osQueue{
 
+// 	}
+// 	return nil
+// }
+
+func (c *Client) RunDiscovery(ctx context.Context, bootNode string) error {
+	var err error
+	ch := make(chan peer.AddrInfo, 256)
 	go func() {
 		count, cNum, sNum := 0, 0, 0
 		for peer := range ch {
 			if peer.ID.Size() == 0 {
 				break
 			}
-			//filter
-
 			resp, err := downloader.DailCacheNode(c.PeerNode, peer.ID)
 			if err == nil && resp.Info != nil {
 				//select neighbor cache node
@@ -95,7 +106,18 @@ func (c *Client) RunDiscovery(ctx context.Context, bootNode string) error {
 			}
 		}
 	}()
-	err := p2p.Subscribe(ctx, c.GetHost(), bootNode, ch)
+	go func() {
+		err = p2p.StartDiscoveryFromMDNS(ctx, c.GetHost(), ch)
+	}()
+	go func() {
+		err = p2p.StartDiscoveryFromDHT(
+			ctx,
+			c.GetHost(),
+			c.GetDHTable(),
+			c.GetRendezvousVersion(),
+			time.Second*3, ch,
+		)
+	}()
 	if err != nil {
 		return errors.Wrap(err, "run discovery service error")
 	}
