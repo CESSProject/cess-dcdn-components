@@ -1,28 +1,56 @@
-# The rpc endpoint of the chain node
-Rpc:
-  # test network
-  - "wss://testnet-rpc0.cess.cloud/ws/"
-  - "wss://testnet-rpc1.cess.cloud/ws/"
-  - "wss://testnet-rpc2.cess.cloud/ws/"
-# The storage network you want to connect to, "mainnet" or "testnet"
-Network: 
-# Bootstrap Nodes
-Boot:
-  # test network
-  - "_dnsaddr.boot-bucket-testnet.cess.cloud"
-# CESS account mnemonic of cacher
-Mnemonic: "..."
-# Service workspace
-Workspace: "/"
-# P2P communication port
-P2P_Port: 4001
+CessChainConfig:
+  # The rpc endpoint of the chain node
+  Rpc:
+    # test network
+    - "wss://testnet-rpc0.cess.cloud/ws/"
+    - "wss://testnet-rpc1.cess.cloud/ws/"
+    - "wss://testnet-rpc2.cess.cloud/ws/"
+  # The storage network you want to connect to, "mainnet" or "testnet"
+  Network: 
+  # CESS account mnemonic of cacher
+  Mnemonic: "..."
 
-# User Files Cacher config
-# File cache size, default 512G, (unit is byte)
-CacheSize:
-# File cache expiration time, default 3*60 minutes (unit is minutes)
-Expiration:
-# Directory to store file cache, default path: Workspace/filecache/
-CacheDir:
-# Price of downloading a single fragment (unit is 1/10^18 CESS or TCESS, is an integer)
-CachePrice: 
+P2PConfig:
+  # Bootstrap Nodes
+  Boot:
+    # test network
+    - "_dnsaddr.boot-bucket-testnet.cess.cloud"
+
+  # Service workspace
+  Workspace: "/"
+  # P2P communication port
+  P2P_Port: 4001
+
+CacherConfig:
+  # User Files Cacher config
+  # File cache size, default 512G, (unit is byte)
+  CacheSize: 112
+  # File cache expiration time, default 3*60 minutes (unit is minutes)
+  Expiration:
+  # Directory to store file cache, default path: Workspace/filecache/
+  CacheDir:
+  # Price of downloading a single fragment (unit is 1/10^18 CESS or TCESS, is an integer)
+  CachePrice: 
+  # The number of free downloads allowed for users
+  FreeDownloads:
+
+CdnProtoConfig:
+  # Cache protocol config
+  # The Id of chain where the EVM contract is deployed
+  ChainId:
+  # Ethereum gas free cap (default is 108694000460)
+  GasFreeCap:
+  #Ethereum gas limit (default is 30000000)
+  GasLimit:
+  #Protocol smart contracts for node registration, order and revenue management, etc.
+  ContractAddresss:
+    #Enter multiple values as a list of string key-value pairs
+    #"cache_protocol_contract": "0xfA326Ce1E9D7d291B40945B6cDdCe8e9Efea9b34"
+  # NFT Token Id that needs to be bound to the cache node(license for cache node to join network)
+  NodeTokenId:
+  # Cache Node's ethereum account private key (Hexadecimal string, not including '0x')
+  NodeAccPrivateKey:
+  #Token owner's ethereum account address (Hexadecimal string, including '0x')
+  TokenAccAddress:
+  #The signature of the token owner's account on the message pair, obtained through the 'eth-tools'
+  TokenAccSign:

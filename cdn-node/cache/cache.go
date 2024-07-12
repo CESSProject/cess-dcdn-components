@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"io/fs"
 	"math/rand"
 	"path/filepath"
@@ -13,17 +12,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/CESSProject/cess-dcdn-components/contract"
-	"github.com/CESSProject/cess-dcdn-components/downloader"
-	"github.com/CESSProject/cess-dcdn-components/light-cacher/ctype"
+	cdnlib "github.com/CESSProject/cess-dcdn-components/cdn-lib"
+	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
 	"github.com/CESSProject/cess-dcdn-components/p2p"
 	"github.com/CESSProject/cess-dcdn-components/protocol"
+	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
 	"github.com/CESSProject/cess-go-sdk/chain"
 	"github.com/CESSProject/cess-go-sdk/config"
 	"github.com/CESSProject/cess-go-tools/cacher"
 	"github.com/CESSProject/cess-go-tools/scheduler"
 	"github.com/CESSProject/p2p-go/core"
-	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mr-tron/base58/base58"
 	"github.com/pkg/errors"
@@ -41,7 +40,6 @@ type Cacher struct {
 	taskQueue *sync.Map // download task queue
 	record    *leveldb.DB
 	cmap      *protocol.CreditMap
-	keyPair   signature.KeyringPair
 	Account   []byte
 	Price     uint64
 }
@@ -69,11 +67,11 @@ func NewCacher(sdk *chain.ChainClient, cache cacher.FileCache, p2pNode *core.Pee
 		k := item.Key().(string)
 		k, _ = filepath.Split(k)
 		buf := make([]byte, 4)
-		v, err := c.record.Get([]byte(k+ctype.RECORD_FRAGMENTS), nil)
+		v, err := c.record.Get([]byte(k+types.RECORD_FRAGMENTS), nil)
 		if err != nil {
 			if err == leveldb.ErrNotFound {
 				binary.BigEndian.PutUint32(buf, 1)
-				c.record.Put([]byte(k+ctype.RECORD_FRAGMENTS), buf, nil)
+				c.record.Put([]byte(k+types.RECORD_FRAGMENTS), buf, nil)
 			}
 		} else {
 			if len(v) < 4 {
@@ -81,14 +79,14 @@ func NewCacher(sdk *chain.ChainClient, cache cacher.FileCache, p2pNode *core.Pee
 			} else {
 				binary.BigEndian.PutUint32(buf, 1+binary.BigEndian.Uint32(v))
 			}
-			c.record.Put([]byte(k+ctype.RECORD_FRAGMENTS), buf, nil)
+			c.record.Put([]byte(k+types.RECORD_FRAGMENTS), buf, nil)
 		}
 	})
 
 	c.AddCallbackOfDeleteItem(func(item cacher.CacheItem) {
 		k := item.Key().(string)
 		k, _ = filepath.Split(k)
-		v, err := c.record.Get([]byte(k+ctype.RECORD_FRAGMENTS), nil)
+		v, err := c.record.Get([]byte(k+types.RECORD_FRAGMENTS), nil)
 
 		if err == nil && len(v) >= 4 {
 			value := binary.BigEndian.Uint32(v[:4])
@@ -96,11 +94,11 @@ func NewCacher(sdk *chain.ChainClient, cache cacher.FileCache, p2pNode *core.Pee
 				value -= 1
 			}
 			binary.BigEndian.PutUint32(v[:4], value)
-			c.record.Put([]byte(k+ctype.RECORD_FRAGMENTS), v[:4], nil)
+			c.record.Put([]byte(k+types.RECORD_FRAGMENTS), v[:4], nil)
 			if value < config.DataShards {
 				buf := make([]byte, 4)
 				binary.BigEndian.PutUint32(buf, 0)
-				c.record.Put([]byte(k+ctype.RECORD_REQUESTS), buf, nil)
+				c.record.Put([]byte(k+types.RECORD_REQUESTS), buf, nil)
 			}
 		}
 	})
@@ -108,8 +106,7 @@ func NewCacher(sdk *chain.ChainClient, cache cacher.FileCache, p2pNode *core.Pee
 	return c
 }
 
-func (c *Cacher) SetConfig(keyPair signature.KeyringPair, price uint64, Acc []byte) {
-	c.keyPair = keyPair
+func (c *Cacher) SetConfig(price uint64, Acc []byte) {
 	c.Price = price
 	c.Account = Acc
 }
@@ -118,30 +115,38 @@ func (c *Cacher) RunDiscovery(ctx context.Context, bootNode string) error {
 
 	var err error
 	ch := make(chan peer.AddrInfo, 64)
+	ticker := time.NewTicker(time.Hour * 3)
+	defer ticker.Stop()
 	go func() {
-		for peer := range ch {
-			if peer.ID.Size() == 0 {
-				break
-			}
-			resp, err := downloader.DailCacheNode(c.PeerNode, peer.ID)
-			if err == nil && resp.Info != nil {
-				//select neighbor cache node
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case peer := <-ch:
+				if peer.ID.Size() == 0 {
+					break
+				}
 				c.Selector.FlushPeerNodes(5*time.Second, peer)
+			case <-ticker.C:
+				// if c.Selector.GetPeersNumber() >= MaxNeigborNum {
+				// 	continue
+				// }
+				// for _, peer := range c.GetDHTable().RoutingTable().ListPeers() {
+
+				// }
 			}
 		}
 	}()
 	go func() {
 		err = p2p.StartDiscoveryFromMDNS(ctx, c.GetHost(), ch)
 	}()
-	go func() {
-		err = p2p.StartDiscoveryFromDHT(
-			ctx,
-			c.GetHost(),
-			c.GetDHTable(),
-			c.GetRendezvousVersion(),
-			time.Second*3, ch,
-		)
-	}()
+	err = p2p.StartDiscoveryFromDHT(
+		ctx,
+		c.GetHost(),
+		c.GetDHTable(),
+		p2p.DISCOVERY_RENDEZVOUS,
+		time.Second*3, ch,
+	)
 	if err != nil {
 		return errors.Wrap(err, "run discovery service error")
 	}
@@ -150,7 +155,7 @@ func (c *Cacher) RunDiscovery(ctx context.Context, bootNode string) error {
 
 func (c *Cacher) GetFileRecord(key, rType string) (int, bool) {
 	c.GetRendezvousVersion()
-	if rType != ctype.RECORD_FRAGMENTS && rType != ctype.RECORD_REQUESTS {
+	if rType != types.RECORD_FRAGMENTS && rType != types.RECORD_REQUESTS {
 		return 0, false
 	}
 	v, err := c.record.Get([]byte(key+rType), nil)
@@ -164,7 +169,7 @@ func (c *Cacher) GetFileRecord(key, rType string) (int, bool) {
 }
 
 func (c *Cacher) PutFileRecord(key, rType string, value int) error {
-	if rType != ctype.RECORD_FRAGMENTS && rType != ctype.RECORD_REQUESTS {
+	if rType != types.RECORD_FRAGMENTS && rType != types.RECORD_REQUESTS {
 		return errors.New("bad record type")
 	}
 	buf := make([]byte, 4)
@@ -226,7 +231,7 @@ func (c *Cacher) RunDownloadServer(ctx context.Context, threadNum int) {
 						return true
 					}
 					count := 0
-					v, err := c.record.Get([]byte(k+ctype.RECORD_FRAGMENTS), nil)
+					v, err := c.record.Get([]byte(k+types.RECORD_FRAGMENTS), nil)
 					if err == nil && len(v) >= 4 {
 						count = int(binary.BigEndian.Uint32(v[:4]))
 					}
@@ -315,7 +320,7 @@ func (c *Cacher) DownloadFiles(fhash, shash string) error {
 				continue
 			}
 
-			fpath := filepath.Join(ctype.TempDir, hash)
+			fpath := filepath.Join(types.TempDir, hash)
 			//
 			err = c.ReadFileAction(peer.ID(bk), fhash, hash, fpath, config.FragmentSize)
 			if err != nil {
@@ -341,16 +346,16 @@ func (c *Cacher) QuerySegmentInfo(acc, fhash, shash string, maxReq int) []string
 
 	k := filepath.Join(fhash, shash)
 	count, req := 0, 0
-	count, _ = c.GetFileRecord(k, ctype.RECORD_FRAGMENTS)
-	req, _ = c.GetFileRecord(k, ctype.RECORD_REQUESTS)
+	count, _ = c.GetFileRecord(k, types.RECORD_FRAGMENTS)
+	req, _ = c.GetFileRecord(k, types.RECORD_REQUESTS)
 	req += 1
-	c.PutFileRecord(k, ctype.RECORD_REQUESTS, req)
+	c.PutFileRecord(k, types.RECORD_REQUESTS, req)
 	//query all file
 	itor := c.record.NewIterator(util.BytesPrefix([]byte(fhash)), nil)
 	cachedSegs := 0
 	for itor.Next() {
 		k := itor.Key()
-		if strings.Contains(string(k), ctype.RECORD_REQUESTS) {
+		if strings.Contains(string(k), types.RECORD_REQUESTS) {
 			continue
 		}
 		v := itor.Value()
@@ -384,8 +389,8 @@ func (c *Cacher) QuerySegmentInfo(acc, fhash, shash string, maxReq int) []string
 	return res
 }
 
-func (c *Cacher) QuerySegmentFromNeighborCacher(fileHash, segmentHash string) (map[peer.ID]ctype.QueryResponse, error) {
-	cachedFilePeers := make(map[peer.ID]ctype.QueryResponse)
+func (c *Cacher) QuerySegmentFromNeighborCacher(fileHash, segmentHash string) (map[peer.ID]types.QueryResponse, error) {
+	cachedFilePeers := make(map[peer.ID]types.QueryResponse)
 	peerNum := c.Selector.GetPeersNumber()
 	if peerNum <= 0 {
 		return nil, errors.New("no neighbor cache node")
@@ -414,14 +419,18 @@ func (c *Cacher) QuerySegmentFromNeighborCacher(fileHash, segmentHash string) (m
 				if !ok {
 					return
 				}
-				resp, err := downloader.QueryFileInfoFromCache(
-					c.PeerNode, c.keyPair.PublicKey, peer.ID, fileHash, segmentHash, "", "")
+				resp, err := cdnlib.QueryFileInfoFromCache(
+					c.PeerNode, peer.ID, fileHash, segmentHash,
+					&cdnlib.Options{
+						Account: c.Account,
+					},
+				)
 				if err != nil {
 					c.Selector.Feedback(peer.ID.String(), false)
 					continue
 				}
 				c.Selector.Feedback(peer.ID.String(), true)
-				if resp.Status != ctype.STATUS_HIT && resp.Status != ctype.STATUS_LOADING {
+				if resp.Status != types.STATUS_HIT && resp.Status != types.STATUS_LOADING {
 					continue
 				}
 				lock.Lock()
@@ -438,12 +447,12 @@ func (c *Cacher) QuerySegmentFromNeighborCacher(fileHash, segmentHash string) (m
 	return cachedFilePeers, nil
 }
 
-func (c *Cacher) SharedSegmentFromNeighborCacher(fhash string, segment chain.SegmentInfo, peers map[peer.ID]ctype.QueryResponse) bool {
+func (c *Cacher) SharedSegmentFromNeighborCacher(fhash string, segment chain.SegmentInfo, peers map[peer.ID]types.QueryResponse) bool {
 	cachedFragments := map[string]struct{}{}
 	shash := string(segment.Hash[:])
 	count := 0
 	for id, res := range peers {
-		if res.Status == ctype.STATUS_LOADING {
+		if res.Status == types.STATUS_LOADING {
 			continue
 		}
 		if count >= config.DataShards {
@@ -453,15 +462,19 @@ func (c *Cacher) SharedSegmentFromNeighborCacher(fhash string, segment chain.Seg
 			if _, ok := cachedFragments[res.CachedFiles[i]]; ok {
 				continue
 			}
-			fpath := filepath.Join(ctype.TempDir, res.CachedFiles[i])
-			err := downloader.DownloadFileFromCache(
-				c.PeerNode, c.keyPair, id, fpath,
-				fhash, string(segment.Hash[:]), res.CachedFiles[i],
+			fpath := filepath.Join(types.TempDir, res.CachedFiles[i])
+			err := cdnlib.DownloadFileFromCache(
+				c.PeerNode, id, fpath,
+				fhash, string(segment.Hash[:]),
+				&cdnlib.Options{
+					WantFile: res.CachedFiles[i],
+					Account:  c.Account,
+				},
 			)
 			if err != nil {
 				continue
 			}
-			acc := hex.EncodeToString(res.Info.Account)
+			acc := common.BytesToAddress(res.Info.Account).Hex()
 			c.cmap.SetUserCredit(acc, +1)
 			err = c.FileCache.MoveFileToCache(filepath.Join(fhash, shash, res.CachedFiles[i]), fpath)
 			if err != nil {

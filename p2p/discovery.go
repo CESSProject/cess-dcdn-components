@@ -16,7 +16,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-const DISCOVERY_SERVICE_TAG = "cess-cdn-pubsub"
+const (
+	DISCOVERY_SERVICE_TAG = "cess-cdn-pubsub"
+	DISCOVERY_RENDEZVOUS  = "cess-cdn-cacher"
+)
 
 type MDNSDiscoveryNotifee struct {
 	ch  chan<- peer.AddrInfo

@@ -12,11 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/CESSProject/cess-dcdn-components/downloader"
-	"github.com/CESSProject/cess-dcdn-components/light-cacher/ctype"
+	cdnlib "github.com/CESSProject/cess-dcdn-components/cdn-lib"
+	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
 	"github.com/CESSProject/cess-go-sdk/config"
 	"github.com/CESSProject/cess-go-sdk/core/erasure"
 	"github.com/CESSProject/cess-go-sdk/core/process"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 )
@@ -49,7 +50,7 @@ func (c *Client) DownloadFile(ctx context.Context, fdir, fhash, cipher string) (
 		cacherdMap, err := c.QuerySegmentFromCachers(fhash, string(segment.Hash[:]), cacherNum, cacherNum)
 		if err != nil || len(cacherdMap) <= 0 {
 
-			segPath, err := downloader.DownloadSegmentFromStorage(fdir, fhash, string(segment.Hash[:]), c.ChainClient, c.PeerNode)
+			segPath, err := cdnlib.DownloadSegmentFromStorage(fdir, fhash, string(segment.Hash[:]), c.ChainClient, c.PeerNode)
 			if err != nil {
 				return dlfile, errors.Wrap(err, "download file error")
 			}
@@ -103,7 +104,7 @@ func (c *Client) DownloadFile(ctx context.Context, fdir, fhash, cipher string) (
 		return dlfile, errors.Wrap(err, "download file error")
 	}
 
-	err = downloader.RecoveryFileViaSegments(segmentPaths, fmeta, cipher, f)
+	err = cdnlib.RecoveryFileViaSegments(segmentPaths, fmeta, cipher, f)
 	if err != nil {
 		return dlfile, errors.Wrap(err, "download file error")
 	}
@@ -119,7 +120,7 @@ func (c *Client) DownloadSegment(ctx context.Context, fhash, shash, sdir string)
 	cacherdMap, err := c.QuerySegmentFromCachers(fhash, shash, cacherNum, cacherNum)
 	if err != nil || len(cacherdMap) <= 0 {
 
-		segPath, err := downloader.DownloadSegmentFromStorage(sdir, fhash, shash, c.ChainClient, c.PeerNode)
+		segPath, err := cdnlib.DownloadSegmentFromStorage(sdir, fhash, shash, c.ChainClient, c.PeerNode)
 		if err != nil {
 			return "", errors.Wrap(err, "download file segment error")
 		}
@@ -346,8 +347,8 @@ func (c *Client) DownloadFileFromGateway(url, fpath, fhash string) error {
 	return nil
 }
 
-func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum, threadNum int) (map[peer.ID]ctype.QueryResponse, error) {
-	cachedPeers := make(map[peer.ID]ctype.QueryResponse)
+func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum, threadNum int) (map[peer.ID]types.QueryResponse, error) {
+	cachedPeers := make(map[peer.ID]types.QueryResponse)
 	peerNum := c.cachers.GetPeersNumber()
 	if cacherNum > peerNum {
 		cacherNum = peerNum
@@ -375,17 +376,20 @@ func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum
 				if !ok {
 					return
 				}
-				resp, err := downloader.QueryFileInfoFromCache(
-					c.PeerNode, c.PublicKey, peer.ID, fileHash, segmentHash, "", "")
+				resp, err := cdnlib.QueryFileInfoFromCache(
+					c.PeerNode, peer.ID, fileHash, segmentHash,
+					&cdnlib.Options{Account: c.cmp.GetClient().Account.Bytes()},
+				)
 				if err != nil {
 					c.cachers.Feedback(peer.ID.String(), false)
 					continue
 				}
 				c.cachers.Feedback(peer.ID.String(), true)
-				if resp.Status == ctype.STATUS_HIT {
+				if resp.Status == types.STATUS_HIT {
 					lock.Lock()
 					cachedPeers[peer.ID] = resp
 					lock.Unlock()
+					c.osQueue <- resp //check and payment cache order
 				}
 				//TODO: about credit
 			}
@@ -395,7 +399,7 @@ func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum
 	return cachedPeers, nil
 }
 
-func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, cachedPeer map[peer.ID]ctype.QueryResponse) []string {
+func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, cachedPeer map[peer.ID]types.QueryResponse) []string {
 	cachedFragments := map[string]struct{}{}
 	res := make([]string, 0)
 	dl, dld := 0, 0
@@ -403,7 +407,7 @@ func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, 
 	wg := sync.WaitGroup{}
 	wg.Add(len(cachedPeer))
 	for id, resp := range cachedPeer {
-		go func(id peer.ID, fragments []string) {
+		go func(id peer.ID, fragments []string, acc []byte) {
 			defer wg.Done()
 			for {
 				lock.Lock()
@@ -432,9 +436,12 @@ func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, 
 						lock.Unlock()
 					}
 					fpath := filepath.Join(fdir, fragment)
-					if err := downloader.DownloadFileFromCache(
-						c.PeerNode, c.KeyringPair, id,
-						fpath, fileHash, segmentHash, fragment,
+					if err := cdnlib.DownloadFileFromCache(
+						c.PeerNode, id, fpath, fileHash, segmentHash,
+						&cdnlib.Options{
+							WantFile: fragment,
+							Account:  c.cmp.GetClient().Account.Bytes(),
+						},
 					); err != nil {
 						lock.Lock()
 						dl -= 1
@@ -445,16 +452,17 @@ func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, 
 					dld += 1
 					res = append(res, fpath)
 					lock.Unlock()
+					c.cmp.SetUserCredit(common.BytesToAddress(acc).Hex(), 1)
 				}
 			}
-		}(id, resp.CachedFiles)
+		}(id, resp.CachedFiles, resp.Info.Account)
 	}
 	wg.Wait()
 	return res
 }
 
 func (c *Client) DeleteFile(fhash string) (string, error) {
-	res, err := c.ChainClient.DeleteFile(c.PublicKey, fhash)
+	res, err := c.ChainClient.DeleteFile(c.ChainClient.GetSignatureAccPulickey(), fhash)
 	if err != nil {
 		return res, errors.Wrap(err, "delete files error")
 	}
@@ -475,15 +483,15 @@ func (c *Client) PreprocessFileAndPutIntoUploadQueue(fpath, cipher, bucket strin
 	deduplication := false
 	if err == nil {
 		for _, v := range fmeta.Owner {
-			if CompareSlice(v.User[:], c.PublicKey) {
+			if CompareSlice(v.User[:], c.ChainClient.GetSignatureAccPulickey()) {
 				return status, nil
 			}
 		}
 		deduplication = true
 	}
 
-	if _, err = c.GenerateStorageOrder(rootHash, segmentInfo, c.PublicKey,
-		f.Name(), bucket, uint64(f.Size())); err != nil {
+	if _, err = c.GenerateStorageOrder(rootHash, segmentInfo,
+		c.ChainClient.GetSignatureAccPulickey(), f.Name(), bucket, uint64(f.Size())); err != nil {
 		return status, errors.Wrap(err, "preprocess file error")
 	}
 	if deduplication {

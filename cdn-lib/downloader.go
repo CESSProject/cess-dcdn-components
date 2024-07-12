@@ -1,4 +1,4 @@
-package downloader
+package cdnlib
 
 import (
 	"bytes"
@@ -7,24 +7,39 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
-	"github.com/CESSProject/cess-dcdn-components/light-cacher/ctype"
+	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
 	"github.com/CESSProject/cess-go-sdk/chain"
 	"github.com/CESSProject/cess-go-sdk/config"
 	"github.com/CESSProject/cess-go-sdk/core/crypte"
 	"github.com/CESSProject/cess-go-sdk/core/erasure"
 	"github.com/CESSProject/p2p-go/core"
-	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 )
 
-func DailCacheNode(peerNode *core.PeerNode, peerId peer.ID) (ctype.QueryResponse, error) {
-	var resp ctype.QueryResponse
+type Options struct {
+	Account  []byte
+	Data     []byte
+	Sign     []byte
+	WantFile string
+}
+
+func setOptions(req *types.Request, opt *Options) {
+	if req == nil || opt == nil {
+		return
+	}
+	req.AccountId = opt.Account
+	req.Data = opt.Data
+	req.Sign = opt.Sign
+	req.WantFile = opt.WantFile
+}
+
+func DailCacheNode(peerNode *core.PeerNode, peerId peer.ID) (types.QueryResponse, error) {
+	var resp types.QueryResponse
 	buf := bytes.NewBuffer([]byte{})
-	req := ctype.Request{
-		Option: ctype.OPTION_DAIL,
+	req := types.Request{
+		Option: types.OPTION_DAIL,
 	}
 	err := SendRequestToCacher(peerNode, peerId, "", "", req, buf)
 	if err != nil {
@@ -41,15 +56,13 @@ func DailCacheNode(peerNode *core.PeerNode, peerId peer.ID) (ctype.QueryResponse
 	return resp, nil
 }
 
-func QueryFileInfoFromCache(peerNode *core.PeerNode, acc []byte, peerId peer.ID, fileHash, segmentHash, data, sign string) (ctype.QueryResponse, error) {
-	var resp ctype.QueryResponse
+func QueryFileInfoFromCache(peerNode *core.PeerNode, peerId peer.ID, fileHash, segmentHash string, opt *Options) (types.QueryResponse, error) {
+	var resp types.QueryResponse
 	buf := bytes.NewBuffer([]byte{})
-	req := ctype.Request{
-		Option:    ctype.OPTION_QUERY,
-		AccountId: acc,
-		Data:      []byte(data),
-		Sign:      []byte(sign),
+	req := types.Request{
+		Option: types.OPTION_QUERY,
 	}
+	setOptions(&req, opt)
 	err := SendRequestToCacher(peerNode, peerId, fileHash, segmentHash, req, buf)
 	if err != nil {
 		return resp, errors.Wrap(err, "query file info error")
@@ -65,20 +78,13 @@ func QueryFileInfoFromCache(peerNode *core.PeerNode, acc []byte, peerId peer.ID,
 	return resp, nil
 }
 
-func DownloadFileFromCache(peerNode *core.PeerNode, keyPair signature.KeyringPair, peerId peer.ID, fpath, fileHash, segmentHash, fragmentHash string) error {
+func DownloadFileFromCache(peerNode *core.PeerNode, peerId peer.ID, fpath, fileHash, segmentHash string, opt *Options) error {
 	buf := bytes.NewBuffer([]byte{})
-	req := ctype.Request{
-		Option:    ctype.OPTION_DOWNLOAD,
-		WantFile:  fragmentHash,
-		AccountId: keyPair.PublicKey,
-		Data:      []byte(time.Now().String()),
+	req := types.Request{
+		Option: types.OPTION_DOWNLOAD,
 	}
-	sign, err := signature.Sign([]byte(req.Data), keyPair.URI)
-	if err != nil {
-		return errors.Wrap(err, "download file error")
-	}
-	req.Sign = sign
-	err = SendRequestToCacher(peerNode, peerId, fileHash, segmentHash, req, buf)
+	setOptions(&req, opt)
+	err := SendRequestToCacher(peerNode, peerId, fileHash, segmentHash, req, buf)
 	if err != nil {
 		return errors.Wrap(err, "download file error")
 	}
@@ -241,7 +247,7 @@ func DownloadFileFromStorage(fdir, fileHash, cipher string, chainCli *chain.Chai
 	return userfile, nil
 }
 
-func SendRequestToCacher(handle *core.PeerNode, peerId peer.ID, roothash, datahash string, req ctype.Request, resp io.Writer) error {
+func SendRequestToCacher(handle *core.PeerNode, peerId peer.ID, roothash, datahash string, req types.Request, resp io.Writer) error {
 	extData, err := json.Marshal(req)
 	if err != nil {
 		return errors.Wrap(err, "send request to cacher error")

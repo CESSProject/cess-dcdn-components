@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/CESSProject/cess-dcdn-components/light-cacher/run/cmd"
+	"github.com/CESSProject/cess-dcdn-components/cdn-node/run/cmd"
 )
 
 func main() {

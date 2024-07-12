@@ -1,4 +1,4 @@
-package ctype
+package types
 
 const (
 	CACHE_NAME       = "light_cache"
@@ -32,6 +32,7 @@ type CacheInfo struct {
 	Status       string  `json:"status"`     // the status of the cache service now, "busy" or "idle"
 	Price        uint64  `json:"price"`      // the price of the cache service, in fragments
 	Account      []byte  `json:"account"`    // the account id of cacher
+	PeerId       string  `json:"peer_id"`    // the peer id of cacher
 	CreditLimit  int     `json:"credit_limit"`
 	CreditPoints int     `json:"credit_points"` // user’s credit on the cacher, one point will be deducted for downloaded a file fragment, and be added for recharge
 }
@@ -46,9 +47,9 @@ type Request struct {
 
 // QueryResponse is the response of the request. When the request option is "download" and successful, the file itself is returned directly.
 type QueryResponse struct {
-	Status      string     `json:"status"`       // status when querying files: "miss", "hit", "frozen", status when dailling:: "ok", "error".
-	CachedFiles []string   `json:"cached_files"` // when request option is "query", a cached list of related files is returned.
-	Info        *CacheInfo `json:"cache_info"`   // when request option is "dail", return the cache node information.
+	Status      string    `json:"status"`       // status when querying files: "miss", "hit", "frozen", status when dailling:: "ok", "error".
+	CachedFiles []string  `json:"cached_files"` // when request option is "query", a cached list of related files is returned.
+	Info        CacheInfo `json:"cache_info"`   // when request option is "dail", return the cache node information.
 }
 
 type SegmentRecord struct {

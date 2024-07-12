@@ -2,15 +2,16 @@ package protocol
 
 import (
 	"context"
-	"encoding/hex"
+	"log"
 	"math/big"
 	"time"
 
-	"github.com/CESSProject/cess-dcdn-components/contract"
+	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/mr-tron/base58/base58"
 	"github.com/pkg/errors"
 )
 
@@ -116,7 +117,7 @@ func CreateCacheOrder(cli *contract.Client, nodeAddress string, opts *bind.Trans
 	return tx.Hash().Hex(), [32]byte(orderId), nil
 }
 
-func RegisterNode(cli *contract.Client, tokenAccAddr, tokenId, sign, peerId string, opts *bind.TransactOpts) error {
+func RegisterNode(cli *contract.Client, tokenAccAddr, peerId string, tokenId, sign []byte, opts *bind.TransactOpts) error {
 
 	contractAddr := cli.GetContractAddress(contract.DEFAULT_CACHE_PROTO_CONTRACT_NAME)
 	protoContract, err := contract.NewCacheProto(contractAddr, cli.GetEthClient())
@@ -124,20 +125,12 @@ func RegisterNode(cli *contract.Client, tokenAccAddr, tokenId, sign, peerId stri
 		return errors.Wrap(err, "register cache node error")
 	}
 	tokenAcc := common.HexToAddress(tokenAccAddr)
-	bigId, ok := big.NewInt(0).SetString(tokenId, 10)
-	if !ok {
-		err = errors.New("bad token Id")
-		return errors.Wrap(err, "register cache node error")
-	}
-	bPeerId, err := hex.DecodeString(peerId)
+	bigId := big.NewInt(0).SetBytes(tokenId)
+	bPeerId, err := base58.Decode(peerId)
 	if err != nil {
 		return errors.Wrap(err, "register cache node error")
 	}
-	bSign, err := hex.DecodeString(sign)
-	if err != nil {
-		return errors.Wrap(err, "register cache node error")
-	}
-	_, err = protoContract.Staking(opts, cli.Account, tokenAcc, bigId, bPeerId, bSign)
+	_, err = protoContract.Staking(opts, cli.Account, tokenAcc, bigId, bPeerId, sign)
 	if err != nil {
 		return errors.Wrap(err, "register cache node error")
 	}
@@ -199,6 +192,39 @@ func ClaimWorkReward(cli *contract.Client, opts *bind.TransactOpts) (string, err
 		return reward, errors.Wrap(err, "claim work reward error")
 	}
 	return reward, nil
+}
+
+func ClaimWorkRewardServer(ctx context.Context, cli *contract.Client, opts *bind.TransactOpts) error {
+
+	_, err := QueryRegisterInfo(cli, cli.Account.Hex())
+	if err != nil {
+		return err
+	}
+	var term int64 = 1
+	ticker := time.NewTicker(time.Hour * 12)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			t, err := QueryCurrencyTerm(cli)
+			if err != nil {
+				continue
+			}
+			if t.Int64() <= term {
+				continue
+			}
+			term += 1
+			tx, err := ClaimWorkReward(cli, opts)
+			if err != nil {
+				//TODO: print log
+				log.Printf("claim work reward in term %d error %v \n", term, err)
+			} else {
+				//TODO: print log
+				log.Printf("claim work reward in term %d success: %s \n", term, tx)
+			}
+		}
+	}
 }
 
 func ExitNetwork(cli *contract.Client, opts *bind.TransactOpts) error {

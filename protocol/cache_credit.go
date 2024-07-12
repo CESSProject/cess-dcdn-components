@@ -1,15 +1,19 @@
 package protocol
 
 import (
-	"encoding/hex"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"sync"
 	"time"
 
 	"github.com/CESSProject/cess-dcdn-components/config"
-	"github.com/CESSProject/cess-dcdn-components/contract"
+	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/mr-tron/base58"
 )
 
 const (
@@ -42,6 +46,10 @@ func NewCreditManager(cli *contract.Client) *CreditMap {
 		cmap:      make(map[string]CreditItem),
 		ethClient: cli,
 	}
+}
+
+func (c CreditMap) GetClient() *contract.Client {
+	return c.ethClient
 }
 
 func (c *CreditMap) SetUserCredit(key string, cdelta int) {
@@ -89,20 +97,66 @@ func (c *CreditMap) GetUserCredit(key string) CreditItem {
 	return credit
 }
 
-func CheckPoint(item CreditItem, limit int, size uint64) (int, bool) {
+func CheckPointLimit(item CreditItem, limit int, size uint64, isCacher bool) (int, bool) {
 	var res bool
 	point := (item.ReceivedBytes / size) / uint64(item.Checkout)
 	if point > POINT_LIMIT {
 		point = POINT_LIMIT
 	}
 	deadLine := limit + (PERM_UNTRUST-item.Perm)*int(point)
-	if (deadLine == 0 && item.Point == 0) || (item.Point < 0 &&
-		math.Abs(float64(item.Point)-float64(deadLine)) > 0) {
-		res = false
+	if !isCacher {
+		if item.Point <= 0 && float64(deadLine)-math.Abs(float64(item.Point)) <= 0 {
+			res = false
+		} else {
+			res = true
+		}
 	} else {
-		res = true
+		if item.Point > 0 && deadLine-item.Point <= 0 {
+			res = false
+		} else {
+			res = true
+		}
 	}
 	return deadLine, res
+}
+
+func (c *CreditMap) PaymentCacheCreditBill(key, peerId string, price, size uint64, creditLimit int, maxFee int64) ([]byte, []byte, error) {
+	credit := c.GetUserCredit(key)
+	bill, ok := CheckPointLimit(credit, creditLimit, size, true)
+	if ok {
+		return nil, nil, nil
+	}
+
+	bPeerId, err := base58.Decode(peerId)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := QueryRegisterInfo(c.ethClient, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !bytes.Equal(info.PeerId, bPeerId) {
+		return nil, nil, errors.New("peer ID does not match the registered one")
+	}
+	value := int64(price * uint64(bill))
+
+	opts, err := c.ethClient.NewTransactionOption(context.Background(), big.NewInt(value).String())
+	if err != nil {
+		return nil, nil, err
+	}
+	if value > maxFee {
+		return nil, nil, fmt.Errorf("cacher order bill(%d) exceeds the preset maximum amount(%d)", value, maxFee)
+	}
+	_, orderId, err := CreateCacheOrder(c.ethClient, key, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	sign, err := c.ethClient.GetSignature(crypto.Keccak256Hash(orderId[:]).Bytes())
+	if err != nil {
+		return nil, nil, err
+	}
+	c.SetUserCredit(key, -bill)
+	return orderId[:], sign, nil
 }
 
 func (c *CreditMap) CheckCredit(key string, data, sign []byte) bool {
@@ -118,14 +172,10 @@ func (c *CreditMap) CheckCredit(key string, data, sign []byte) bool {
 		item.LastAccess = time.Now()
 		c.cmap[key] = item
 	}
-	_, res = CheckPoint(item, config.GetConfig().FreeDownloads, config.CACHE_BLOCK_SIZE)
+	_, res = CheckPointLimit(item, config.GetConfig().FreeDownloads, config.CACHE_BLOCK_SIZE, false)
 	if len(data) > 0 && len(sign) > 0 {
-		bkey, err := hex.DecodeString(key)
-		if err != nil {
-			return res
-		}
-		if !crypto.VerifySignature(
-			bkey, crypto.Keccak256Hash(data).Bytes(), sign) {
+
+		if c.ethClient.VerifySign(crypto.Keccak256Hash(data).Bytes(), sign) {
 			return res
 		}
 		order, err := QueryCacheOrder(c.ethClient, [32]byte(data))
@@ -150,7 +200,7 @@ func (c *CreditMap) CheckCredit(key string, data, sign []byte) bool {
 		item.Checkout += 1
 		item.LastAccess = time.Now()
 		c.cmap[key] = item
-		_, res = CheckPoint(item, config.GetConfig().FreeDownloads, config.CACHE_BLOCK_SIZE)
+		_, res = CheckPointLimit(item, config.GetConfig().FreeDownloads, config.CACHE_BLOCK_SIZE, false)
 	}
 	return res
 }

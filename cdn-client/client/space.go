@@ -6,7 +6,7 @@ import (
 )
 
 func (c *Client) QueryUserSpaceInfo() (chain.UserSpaceInfo, error) {
-	info, err := c.QueryUserOwnedSpace(c.PublicKey, -1)
+	info, err := c.QueryUserOwnedSpace(c.ChainClient.GetSignatureAccPulickey(), -1)
 	if err != nil {
 		return info, errors.Wrap(err, "query user space info error")
 	}

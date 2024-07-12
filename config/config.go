@@ -3,64 +3,11 @@ package config
 import (
 	"os"
 
-	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 )
 
 const (
-	PROFILE_TEMPLATE = `# The rpc endpoint of the chain node
-Rpc:
-  # test network
-  - "wss://testnet-rpc0.cess.cloud/ws/"
-  - "wss://testnet-rpc1.cess.cloud/ws/"
-  - "wss://testnet-rpc2.cess.cloud/ws/"
-# The storage network you want to connect to, "mainnet" or "testnet"
-Network: 
-# Bootstrap Nodes
-Boot:
-  # test network
-  - "_dnsaddr.boot-bucket-testnet.cess.cloud"
-# CESS account mnemonic, it be used to query info on chain or send transactions
-Mnemonic: "..."
-# Service workspace
-Workspace: "/"
-# P2P communication port
-P2P_Port: 4001
-`
-	CACHE_PROFILE_TEMPLATE = `
-# User Files Cacher config
-# File cache size, default 512G, (unit is byte)
-CacheSize:
-# File cache expiration time, default 3*60 minutes (unit is minutes)
-Expiration:
-# Directory to store file cache, default path: Workspace/filecache/
-CacheDir:
-# Price of downloading a single fragment (unit is 1/10^18 CESS or TCESS, is an integer)
-CachePrice: 
-# The number of free downloads allowed for users
-FreeDownloads:
-`
-	CONTRACT_PROFILE_TEMPLATE = `
-# Cache protocol config
-# The Id of chain where the EVM contract is deployed
-ChainId:
-# Ethereum gas free cap (default is 108694000460)
-GasFreeCap:
-#Ethereum gas limit (default is 30000000)
-GasLimit:
-#Cache protocol smart contracts for node registration, order and revenue management, etc.
-ContractAddress:
-# NFT Token Id that needs to be bound to the cache node(license for cache node to join network)
-NodeTokenId:
-# Cache Node's ethereum account private key (Hexadecimal string, not including '0x')
-NodeAccPrivateKey:
-Token owner's ethereum account address (Hexadecimal string, including '0x')
-TokenAccAddress:
-The signature of the token owner's account on the message pair, obtained through the 'eth-tools'
-TokenAccSign:
-`
-
 	DEFAULT_CONFIG_PATH    = "./config.yaml"
 	TESTNET_PROTO_PREFIX   = "/testnet"
 	MAINNET_PROTO_PREFIX   = "/mainnet"
@@ -74,7 +21,9 @@ TokenAccSign:
 	CACHE_BLOCK_SIZE       = 8 * 1024 * 1024
 )
 
-var config Config
+var (
+	_default DefaultConfig
+)
 
 type Config struct {
 	CachePrice        uint64   `name:"CachePrice" toml:"CachePrice" yaml:"CachePrice"`
@@ -96,61 +45,95 @@ type Config struct {
 	TokenAccAddress   string   `name:"TokenAccAddress" toml:"TokenAccAddress" yaml:"TokenAccAddress"`
 	TokenAccSign      string   `name:"TokenAccSign" toml:"TokenAccSign" yaml:"TokenAccSign"`
 	FreeDownloads     int      `name:"FreeDownloads" toml:"FreeDownloads" yaml:"FreeDownloads"`
-	KeyPair           signature.KeyringPair
 }
 
-func GetConfig() Config {
-	return config
+type DefaultConfig struct {
+	CessChainConfig
+	P2PConfig
+	CacherConfig
+	CdnProtoConfig
 }
 
-func ParseConfig(fpath string) error {
+type CessChainConfig struct {
+	Rpc      []string
+	Network  string
+	Mnemonic string
+}
 
-	err := ParseCommonConfig(fpath, "yaml", &config)
+type P2PConfig struct {
+	Boots     []string
+	P2PPort   int
+	WorkSpace string
+}
+
+type CacherConfig struct {
+	CachePrice    uint64
+	CacheDir      string
+	Expiration    int64
+	CacheSize     int64
+	FreeDownloads int
+}
+
+type CdnProtoConfig struct {
+	ChainId           int64
+	Staking           string
+	GasFreeCap        int64
+	GasLimit          uint64
+	ContractAddresss  map[string]string
+	NodeTokenId       string
+	NodeAccPrivateKey string
+	TokenAccAddress   string
+	TokenAccSign      string
+}
+
+func GetConfig() DefaultConfig {
+	return _default
+}
+
+func ParseDefaultConfig(fpath string) error {
+
+	err := ParseCommonConfig(fpath, "yaml", &_default)
 	if err != nil {
 		return err
 	}
 
-	if config.CacheSize <= 32*1024*1024*1024 {
-		config.CacheSize = 32 * 1024 * 1024 * 1024
+	if _default.CacheSize <= 32*1024*1024*1024 {
+		_default.CacheSize = 32 * 1024 * 1024 * 1024
 	}
-	if config.Expiration <= 0 || config.Expiration > 7*24*60 {
-		config.Expiration = 3 * 60
+	if _default.Expiration <= 0 || _default.Expiration > 7*24*60 {
+		_default.Expiration = 3 * 60
 	}
-	switch config.Network {
+	switch _default.Network {
 	case MAINNET_PROTO_PREFIX, TESTNET_PROTO_PREFIX, DEVNET_PROTO_PREFIX:
 	default:
-		config.Network = TESTNET_PROTO_PREFIX
-	}
-	if config.CacheDir == "" {
-		config.CacheDir = DEFAULT_CACHE_PATH
-	}
-	if config.WorkSpace == "" {
-		config.WorkSpace = DEFAULT_WORKSPACE
-	}
-	if config.CachePrice == 0 {
-		config.CachePrice = DEFAULT_CACHE_PRICE
-	}
-	if config.FreeDownloads == 0 {
-		config.FreeDownloads = DEFAULT_DOWNLOAD_POINT
+		_default.Network = TESTNET_PROTO_PREFIX
 	}
 
-	if _, err := os.Stat(config.CacheDir); err != nil {
-		err = os.MkdirAll(config.CacheDir, 0755)
+	if _default.CacheDir == "" {
+		_default.CacheDir = DEFAULT_CACHE_PATH
+	}
+	if _default.WorkSpace == "" {
+		_default.WorkSpace = DEFAULT_WORKSPACE
+	}
+	if _default.CachePrice == 0 {
+		_default.CachePrice = DEFAULT_CACHE_PRICE
+	}
+	if _default.FreeDownloads == 0 {
+		_default.FreeDownloads = DEFAULT_DOWNLOAD_POINT
+	}
+
+	if _, err := os.Stat(_default.CacheDir); err != nil {
+		err = os.MkdirAll(_default.CacheDir, 0755)
 		if err != nil {
-			return errors.Wrap(err, "parse config file error")
+			return errors.Wrap(err, "parse default config file error")
 		}
 	}
-	if _, err := os.Stat(config.WorkSpace); err != nil {
-		err = os.MkdirAll(config.WorkSpace, 0755)
+	if _, err := os.Stat(_default.WorkSpace); err != nil {
+		err = os.MkdirAll(_default.WorkSpace, 0755)
 		if err != nil {
-			return errors.Wrap(err, "parse config file error")
+			return errors.Wrap(err, "parse default config file error")
 		}
 	}
-	keyPair, err := signature.KeyringPairFromSecret(config.Mnemonic, 0)
-	if err != nil {
-		return errors.Wrap(err, "parse config file error")
-	}
-	config.KeyPair = keyPair
 	return nil
 }
 

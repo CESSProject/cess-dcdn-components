@@ -24,6 +24,8 @@ const (
 type Client struct {
 	RpcAddrs    []string
 	ChainID     int64
+	GasFeeCap   *big.Int
+	GasLimit    uint64
 	cli         *ethclient.Client
 	rpcErrCh    chan error
 	Account     common.Address
@@ -59,6 +61,12 @@ func NewClient(opts ...Option) (*Client, error) {
 		err := errors.New("chain RPC connection failed")
 		return cli, errors.Wrap(err, "new ethereum client error")
 	}
+	if cli.GasFeeCap == nil {
+		cli.GasFeeCap = big.NewInt(108694000460)
+	}
+	if cli.GasLimit == 0 {
+		cli.GasLimit = uint64(30000000)
+	}
 	return cli, nil
 }
 
@@ -86,6 +94,14 @@ func ChainID(id int64) Option {
 	}
 }
 
+func EthereumGas(gasFeeCap int64, gasLimit uint64) Option {
+	return func(c *Client) error {
+		c.GasFeeCap = big.NewInt(gasFeeCap)
+		c.GasLimit = gasLimit
+		return nil
+	}
+}
+
 func AccountPrivateKey(hexKey string) Option {
 	return func(c *Client) error {
 		sk, err := crypto.HexToECDSA(hexKey)
@@ -93,41 +109,48 @@ func AccountPrivateKey(hexKey string) Option {
 			return err
 		}
 		c.Account = crypto.PubkeyToAddress(sk.PublicKey)
+
 		c.sk = sk
 		return nil
 	}
 }
 
-func (cli *Client) AddWorkContract(name, hexAddr string) {
-	cli.ContractMap[name] = common.HexToAddress(hexAddr)
+func (cli *Client) AddWorkContract(contracts map[string]string) {
+	for k, v := range contracts {
+		cli.ContractMap[k] = common.HexToAddress(v)
+	}
+
 }
 
 func (cli Client) GetEthClient() *ethclient.Client {
 	return cli.cli
 }
 
+func (cli Client) VerifySign(hash []byte, sign []byte) bool {
+
+	return crypto.VerifySignature(
+		crypto.CompressPubkey(&cli.sk.PublicKey),
+		hash, sign,
+	)
+}
+
+func (cli Client) GetSignature(data []byte) ([]byte, error) {
+	return crypto.Sign(data, cli.sk)
+}
+
 func (cli Client) GetContractAddress(name string) common.Address {
 	return cli.ContractMap[name]
 }
 
-func (cli Client) NewTransactionOption(ctx context.Context, gasFreeCap int64, gasLimit uint64, value string) (*bind.TransactOpts, error) {
+func (cli Client) NewTransactionOption(ctx context.Context, value string) (*bind.TransactOpts, error) {
 	gasTipCap, _ := cli.cli.SuggestGasTipCap(ctx)
 	opts, err := bind.NewKeyedTransactorWithChainID(cli.sk, big.NewInt(11330))
 	if err != nil {
 		return nil, errors.Wrap(err, "new transaction option error")
 	}
 	opts.GasTipCap = gasTipCap
-	if gasFreeCap > 0 {
-		opts.GasFeeCap = big.NewInt(gasFreeCap)
-	} else {
-		opts.GasFeeCap = big.NewInt(108694000460)
-	}
-	if gasLimit > 0 {
-		opts.GasLimit = gasLimit
-	} else {
-		opts.GasLimit = uint64(30000000)
-	}
-
+	opts.GasFeeCap = cli.GasFeeCap
+	opts.GasLimit = cli.GasLimit
 	if value != "" {
 		opts.Value, _ = big.NewInt(0).SetString(value, 10)
 	}

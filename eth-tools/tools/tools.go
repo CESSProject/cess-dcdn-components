@@ -8,7 +8,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/CESSProject/cess-dcdn-components/contract"
+	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -36,15 +36,13 @@ func BuyCacherToken(c Config, sk, value string) (string, error) {
 		contract.AccountPrivateKey(sk),
 		contract.ChainID(c.ChainId),
 		contract.ConnectionRpcAddresss(c.ChainRpcs),
+		contract.EthereumGas(c.GasFreeCap, c.GasLimit),
 	)
 	if err != nil {
 		return "", err
 	}
 	opts, err := client.NewTransactionOption(
-		context.Background(),
-		c.GasFreeCap,
-		c.GasLimit,
-		value,
+		context.Background(), value,
 	)
 	if err != nil {
 		return "", err

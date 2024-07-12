@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -9,10 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/CESSProject/cess-dcdn-components/cdn-node/cache"
+	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
 	"github.com/CESSProject/cess-dcdn-components/config"
-	"github.com/CESSProject/cess-dcdn-components/contract"
-	"github.com/CESSProject/cess-dcdn-components/light-cacher/cache"
-	"github.com/CESSProject/cess-dcdn-components/light-cacher/ctype"
+	"github.com/CESSProject/cess-dcdn-components/protocol"
+	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
 	cess "github.com/CESSProject/cess-go-sdk"
 	"github.com/CESSProject/cess-go-tools/cacher"
 	"github.com/CESSProject/cess-go-tools/scheduler"
@@ -22,7 +24,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   ctype.CACHE_NAME,
+	Use:   types.CACHE_NAME,
 	Short: "light cache service based on CESS network",
 }
 
@@ -36,39 +38,10 @@ func Execute() {
 
 func InitCmd() {
 	rootCmd.AddCommand(
-		cmd_config(),
 		cmd_run(),
+		cmd_exit_network(),
 	)
 	rootCmd.PersistentFlags().StringP("config", "c", "", "custom profile")
-}
-
-func cmd_config() *cobra.Command {
-	return &cobra.Command{
-		Use:                   "config",
-		Short:                 "Generate configuration file",
-		DisableFlagsInUseLine: true,
-		Run: func(cmd *cobra.Command, args []string) {
-			f, err := os.Create(config.DEFAULT_CONFIG_PATH)
-			if err != nil {
-				log.Fatal("[err]", err)
-			}
-			defer f.Close()
-			_, err = f.WriteString(config.PROFILE_TEMPLATE)
-			if err != nil {
-				log.Fatal("[err]", err)
-			}
-			_, err = f.WriteString(config.CACHE_PROFILE_TEMPLATE)
-			if err != nil {
-				log.Fatal("[err]", err)
-			}
-			_, err = f.WriteString(config.CONTRACT_PROFILE_TEMPLATE)
-			if err != nil {
-				log.Fatal("[err]", err)
-			}
-			f.Sync()
-			log.Println("[ok] generate a config file in", config.DEFAULT_CONFIG_PATH)
-		},
-	}
 }
 
 func cmd_run() *cobra.Command {
@@ -77,6 +50,49 @@ func cmd_run() *cobra.Command {
 		Short:                 "Running services",
 		DisableFlagsInUseLine: true,
 		Run:                   cmd_run_func,
+	}
+}
+
+func cmd_exit_network() *cobra.Command {
+	return &cobra.Command{
+		Use:                   "exit",
+		Short:                 "exit node from CESS CDN network and redeem staking",
+		DisableFlagsInUseLine: true,
+		Run:                   cmd_exit_func,
+	}
+}
+
+func cmd_exit_func(cmd *cobra.Command, args []string) {
+	cpath, _ := cmd.Flags().GetString("config")
+	if cpath == "" {
+		cpath, _ = cmd.Flags().GetString("c")
+		if cpath == "" {
+			log.Println("empty config file path")
+			return
+		}
+	}
+
+	if err := config.ParseDefaultConfig(cpath); err != nil {
+		log.Println("error", err)
+		return
+	}
+	conf := config.GetConfig()
+	cli, err := contract.NewClient(
+		contract.AccountPrivateKey(conf.NodeAccPrivateKey),
+		contract.ChainID(conf.ChainId),
+		contract.ConnectionRpcAddresss(conf.Rpc),
+		contract.EthereumGas(conf.GasFreeCap, conf.GasLimit),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	opts, err := cli.NewTransactionOption(context.Background(), "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = protocol.ExitNetwork(cli, opts)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -90,7 +106,7 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	if err := config.ParseConfig(cpath); err != nil {
+	if err := config.ParseDefaultConfig(cpath); err != nil {
 		log.Println("error", err)
 		return
 	}
@@ -126,7 +142,7 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		ctx,
 		p2pgo.ListenPort(conf.P2PPort),
 		p2pgo.Workspace(conf.WorkSpace),
-		p2pgo.BootPeers(conf.Boot),
+		p2pgo.BootPeers(conf.Boots),
 		p2pgo.ProtocolPrefix(conf.Network),
 	)
 
@@ -156,11 +172,42 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		contract.ChainID(conf.ChainId),
 		contract.ConnectionRpcAddresss(conf.Rpc),
 	)
-	cli.AddWorkContract(contract.DEFAULT_CACHE_PROTO_CONTRACT_NAME, conf.ContractAddress)
+	if err != nil {
+		log.Println("init cess chain client error", err)
+		return
+	}
+	cli.AddWorkContract(conf.ContractAddresss)
+
+	if _, err = protocol.QueryRegisterInfo(cli, cli.Account.Hex()); err != nil {
+		tokenId, err := hex.DecodeString(conf.NodeTokenId)
+		if err != nil {
+			log.Println("init cess chain client error", err)
+			return
+		}
+		sign, err := hex.DecodeString(conf.TokenAccSign)
+		if err != nil {
+			log.Println("init cess chain client error", err)
+			return
+		}
+		opts, err := cli.NewTransactionOption(context.Background(), conf.Staking)
+		if err != nil {
+			log.Println("init cess chain client error", err)
+			return
+		}
+		err = protocol.RegisterNode(
+			cli, conf.TokenAccAddress,
+			peerNode.GetHost().ID().String(),
+			tokenId, sign, opts,
+		)
+		if err != nil {
+			log.Println("init cess chain client error", err)
+			return
+		}
+	}
 
 	cacher := cache.NewCacher(chainSdk, cacheModule, peerNode, selector, cli)
 
-	cacher.SetConfig(conf.KeyPair, conf.CachePrice, cli.Account.Bytes())
+	cacher.SetConfig(conf.CachePrice, cli.Account.Bytes())
 	cacher.RestoreCacheFiles(conf.CacheDir)
 	cacher.RegisterP2pTsFileServiceHandle(cacher.ReadCacheService)
 
@@ -174,14 +221,29 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		log.Println("wait for service to stop ...")
 	}()
 	go func() {
-		defer stop()
-		if len(conf.Boot) <= 0 {
+		if len(conf.Boots) <= 0 {
+			stop()
 			log.Println("please configure boot node.")
 			return
 		}
-		err = cacher.RunDiscovery(ctx, conf.Boot[0])
+		err = cacher.RunDiscovery(ctx, conf.Boots[0])
+		if err != nil {
+			stop()
+			log.Println(err)
+			return
+		}
+	}()
+	go func() {
+		opts, err := cli.NewTransactionOption(context.Background(), "")
 		if err != nil {
 			log.Println(err)
+			stop()
+			return
+		}
+		err = protocol.ClaimWorkRewardServer(context.Background(), cli, opts)
+		if err != nil {
+			log.Println(err)
+			stop()
 			return
 		}
 	}()

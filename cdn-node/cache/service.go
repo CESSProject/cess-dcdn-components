@@ -1,16 +1,16 @@
 package cache
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 
+	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
 	"github.com/CESSProject/cess-dcdn-components/config"
-	"github.com/CESSProject/cess-dcdn-components/light-cacher/ctype"
 	"github.com/CESSProject/cess-dcdn-components/protocol"
 	"github.com/CESSProject/p2p-go/core"
 	"github.com/CESSProject/p2p-go/pb"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
 
@@ -24,38 +24,45 @@ var (
 	MaxNeigborNum       = 64
 )
 
-func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse, error) {
+func (c *Cacher) GetCacheInfo(userAcc string) types.CacheInfo {
 	reqNum := c.GetRequestNumber()
+	credit := c.cmap.GetUserCredit(userAcc)
+	limit, _ := protocol.CheckPointLimit(
+		credit, config.GetConfig().FreeDownloads, config.CACHE_BLOCK_SIZE, false,
+	)
+	info := types.CacheInfo{
+		LoadRatio:    c.GetLoadRatio(),
+		Account:      c.Account,
+		Price:        c.Price,
+		CreditLimit:  limit,
+		CreditPoints: credit.Point,
+		PeerId:       c.GetHost().ID().String(),
+	}
+	if reqNum > int64(BusyLine) && c.GetRequestNumber()-reqNum > 0 {
+		info.Status = types.CACHE_BUSY
+	} else {
+		info.Status = types.CACHE_IDLE
+	}
+	return info
+}
+
+func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse, error) {
 	resp := &pb.ReadfileResponse{}
-	extResp := ctype.QueryResponse{}
+	extResp := types.QueryResponse{}
 
 	data := req.GetExtendData()
-	var extReq ctype.Request
+	var extReq types.Request
 	err := json.Unmarshal(data, &extReq)
 	if err != nil {
 		resp.Code = core.P2PResponseFailed
 		return resp, errors.Wrap(err, "read cache service error")
 	}
 
-	userAcc := hex.EncodeToString(extReq.AccountId)
+	userAcc := common.BytesToAddress(extReq.AccountId).Hex() //hex.EncodeToString()
 	switch extReq.Option {
-	case ctype.OPTION_DAIL:
-		credit := c.cmap.GetUserCredit(userAcc)
-		limit, _ := protocol.CheckPoint(credit, config.GetConfig().FreeDownloads, config.CACHE_BLOCK_SIZE)
-		info := ctype.CacheInfo{
-			LoadRatio:    c.GetLoadRatio(),
-			Account:      c.Account,
-			Price:        c.Price,
-			CreditLimit:  limit,
-			CreditPoints: credit.Point,
-		}
-		if reqNum > int64(BusyLine) && c.GetRequestNumber()-reqNum > 0 {
-			info.Status = ctype.CACHE_BUSY
-		} else {
-			info.Status = ctype.CACHE_IDLE
-		}
-		extResp.Info = &info
-		extResp.Status = ctype.STATUS_OK
+	case types.OPTION_DAIL:
+		extResp.Info = c.GetCacheInfo(userAcc)
+		extResp.Status = types.STATUS_OK
 		res, err := json.Marshal(extResp)
 		if err != nil {
 			resp.Code = core.P2PResponseRemoteFailed
@@ -64,18 +71,30 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 		resp.Data = res
 		resp.Length = uint32(len(res))
 		resp.Code = core.P2PResponseFinish
-	case ctype.OPTION_QUERY:
-		if !c.cmap.CheckCredit(userAcc, extReq.Data, extReq.Sign) {
-			extResp.Status = ctype.STATUS_FROZEN
-		} else if _, ok := c.taskQueue.Load(req.Datahash); ok {
-			extResp.Status = ctype.STATUS_LOADING
-		} else if fragments := c.QuerySegmentInfo(
-			userAcc, req.Roothash, req.Datahash, MaxRequest); len(fragments) <= 0 {
-			extResp.Status = ctype.STATUS_MISS
-		} else {
-			extResp.Status = ctype.STATUS_HIT
-			extResp.CachedFiles = fragments
-		}
+	case types.OPTION_QUERY:
+		extResp.Info = c.GetCacheInfo(userAcc)
+		func() {
+			if !c.cmap.CheckCredit(userAcc, extReq.Data, extReq.Sign) {
+				extResp.Status = types.STATUS_FROZEN
+				return
+			}
+			if req.Datahash == "" && req.Roothash == "" {
+				extResp.Status = types.STATUS_OK
+				return
+			}
+			if _, ok := c.taskQueue.Load(req.Datahash); ok {
+				extResp.Status = types.STATUS_LOADING
+				return
+			}
+			if fragments := c.QuerySegmentInfo(
+				userAcc, req.Roothash, req.Datahash, MaxRequest); len(fragments) > 0 {
+				extResp.Status = types.STATUS_HIT
+				extResp.CachedFiles = fragments
+				return
+			}
+			extResp.Status = types.STATUS_MISS
+		}()
+
 		res, err := json.Marshal(extResp)
 		if err != nil {
 			resp.Code = core.P2PResponseRemoteFailed
@@ -84,7 +103,7 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 		resp.Data = res
 		resp.Length = uint32(len(res))
 		resp.Code = core.P2PResponseFinish
-	case ctype.OPTION_DOWNLOAD:
+	case types.OPTION_DOWNLOAD:
 		if !c.cmap.CheckCredit(userAcc, extReq.Data, extReq.Sign) {
 			resp.Code = core.P2PResponseFailed
 			return resp, errors.Wrap(errors.New("not enough credit points"), "read cache service error")

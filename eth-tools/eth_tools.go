@@ -6,14 +6,14 @@ import (
 	"log"
 	"os"
 
+	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
 	"github.com/CESSProject/cess-dcdn-components/config"
 	"github.com/CESSProject/cess-dcdn-components/eth-tools/tools"
-	"github.com/CESSProject/cess-dcdn-components/light-cacher/ctype"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   ctype.CACHE_NAME,
+	Use:   types.CACHE_NAME,
 	Short: "ethereum tools for light cache node",
 }
 
