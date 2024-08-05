@@ -128,12 +128,6 @@ func (c *Cacher) RunDiscovery(ctx context.Context, bootNode string) error {
 				}
 				c.Selector.FlushPeerNodes(5*time.Second, peer)
 			case <-ticker.C:
-				// if c.Selector.GetPeersNumber() >= MaxNeigborNum {
-				// 	continue
-				// }
-				// for _, peer := range c.GetDHTable().RoutingTable().ListPeers() {
-
-				// }
 			}
 		}
 	}()

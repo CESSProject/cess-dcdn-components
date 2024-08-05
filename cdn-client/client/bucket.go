@@ -39,7 +39,7 @@ func (c *Client) ListFilesInBucket(name string) ([]string, error) {
 }
 
 func (c *Client) ListUserFiles() ([]string, error) {
-	list, err := c.QueryAllUserFiles(c.ChainClient.GetSignatureAccPulickey(), -1)
+	list, err := c.QueryUserFidList(c.ChainClient.GetSignatureAccPulickey(), -1)
 	if err != nil {
 		return nil, errors.Wrap(err, "list user files error")
 	}

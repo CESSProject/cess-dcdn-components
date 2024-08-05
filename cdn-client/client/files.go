@@ -175,15 +175,15 @@ func (c *Client) DownloadSegment(ctx context.Context, fhash, shash, sdir string)
 	return segPath, errors.Wrap(err, "download file segment error")
 }
 
-func (c *Client) UploadFile(bucket, fpath, cipher string, callback func(UploadStats)) (string, error) {
-	status, err := c.PreprocessFileAndPutIntoUploadQueue(fpath, cipher, bucket, callback)
+func (c *Client) UploadFile(territory, bucket, fpath, cipher string, callback func(UploadStats)) (string, error) {
+	status, err := c.PreprocessFileAndPutIntoUploadQueue(fpath, cipher, territory, bucket, callback)
 	if err != nil {
 		return "", errors.Wrap(err, "upload file error")
 	}
 	return status.FileHash, nil
 }
 
-func (c *Client) UploadDirAsBoxFile(bucket, fname, dir, cipher string, callback func(UploadStats)) (string, []byte, error) {
+func (c *Client) UploadDirAsBoxFile(territory, bucket, fname, dir, cipher string, callback func(UploadStats)) (string, []byte, error) {
 
 	box, fpath, err := c.CreateAFileBox(fname, dir)
 	if err != nil {
@@ -191,7 +191,7 @@ func (c *Client) UploadDirAsBoxFile(bucket, fname, dir, cipher string, callback 
 	}
 
 	status, err := c.PreprocessFileAndPutIntoUploadQueue(
-		fpath, cipher, bucket, func(us UploadStats) {
+		fpath, cipher, territory, bucket, func(us UploadStats) {
 			callback(us)
 			if _, err := os.Stat(us.FilePath); err == nil {
 				os.RemoveAll(us.FilePath)
@@ -245,7 +245,7 @@ func (c Client) DownloadFileInBox(fhash, elemFileName string, boxMeta FileBox) (
 	return data, nil
 }
 
-func (c *Client) UploadFileToGateway(url, bucket, fpath string) (string, error) {
+func (c *Client) UploadFileToGateway(url, territory, bucket, fpath, cipher string) (string, error) {
 	hash := sha256.New()
 	hash.Write([]byte(fpath))
 	chunksDir := filepath.Join(c.tmpDir, hex.EncodeToString(hash.Sum(nil)))
@@ -257,7 +257,7 @@ func (c *Client) UploadFileToGateway(url, bucket, fpath string) (string, error) 
 		return "", errors.Wrap(err, "upload file to gateway error")
 	}
 	_, name := filepath.Split(fpath)
-	tx, err := process.UploadFileChunks(url, c.Mnemonic, chunksDir, bucket, name, num, size)
+	tx, err := process.UploadFileChunks(url, c.Mnemonic, chunksDir, territory, bucket, name, cipher, num, size)
 	if err != nil {
 		return "", errors.Wrap(err, "upload file to gateway error")
 	}
@@ -268,7 +268,7 @@ func (c *Client) UploadFileToGateway(url, bucket, fpath string) (string, error) 
 	return tx, nil
 }
 
-func (c *Client) UploadDirToGateway(url, bucket, fname, dir string) (string, []byte, error) {
+func (c *Client) UploadDirToGateway(url, territory, bucket, fname, cipher, dir string) (string, []byte, error) {
 	box, fpath, err := c.CreateAFileBox(fname, dir)
 	if err != nil {
 		return "", nil, errors.Wrap(err, "upload dir to gateway error")
@@ -282,7 +282,7 @@ func (c *Client) UploadDirToGateway(url, bucket, fname, dir string) (string, []b
 	if err != nil {
 		return "", nil, errors.Wrap(err, "upload dir to gateway error")
 	}
-	tx, err := process.UploadFileChunks(url, c.Mnemonic, chunksDir, bucket, fname, num, size)
+	tx, err := process.UploadFileChunks(url, c.Mnemonic, chunksDir, territory, bucket, fname, cipher, num, size)
 	if err != nil {
 		return "", nil, errors.Wrap(err, "upload dir to gateway error")
 	}
@@ -469,13 +469,14 @@ func (c *Client) DeleteFile(fhash string) (string, error) {
 	return res, nil
 }
 
-func (c *Client) PreprocessFileAndPutIntoUploadQueue(fpath, cipher, bucket string, callback func(UploadStats)) (UploadStats, error) {
+func (c *Client) PreprocessFileAndPutIntoUploadQueue(fpath, cipher, territory, bucket string, callback func(UploadStats)) (UploadStats, error) {
 	var status UploadStats
 	f, err := os.Stat(fpath)
 	if err != nil || f.IsDir() || f.Size() <= 0 {
 		return status, errors.Wrap(err, "preprocess file error")
 	}
-	segmentInfo, rootHash, err := process.ShardedEncryptionProcessing(fpath, cipher)
+
+	segmentInfo, rootHash, err := process.FullProcessing(fpath, cipher, c.tmpDir)
 	if err != nil {
 		return status, errors.Wrap(err, "preprocess file error")
 	}
@@ -490,8 +491,10 @@ func (c *Client) PreprocessFileAndPutIntoUploadQueue(fpath, cipher, bucket strin
 		deduplication = true
 	}
 
-	if _, err = c.GenerateStorageOrder(rootHash, segmentInfo,
-		c.ChainClient.GetSignatureAccPulickey(), f.Name(), bucket, uint64(f.Size())); err != nil {
+	if _, err = c.PlaceStorageOrder(
+		rootHash, f.Name(), bucket, territory,
+		segmentInfo, c.ChainClient.GetSignatureAccPulickey(),
+		uint64(f.Size())); err != nil {
 		return status, errors.Wrap(err, "preprocess file error")
 	}
 	if deduplication {

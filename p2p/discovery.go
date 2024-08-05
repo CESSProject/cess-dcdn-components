@@ -28,12 +28,8 @@ type MDNSDiscoveryNotifee struct {
 }
 
 func (n *MDNSDiscoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
-	err := n.h.Connect(n.ctx, pi)
-	if err == nil {
-		n.ch <- pi
-	}
+	n.ch <- pi
 }
-
 func StartDiscoveryFromDHT(ctx context.Context, h host.Host, dht *dht.IpfsDHT, rendezvous string, interval time.Duration, recv chan<- peer.AddrInfo) error {
 	routingDiscovery := routing.NewRoutingDiscovery(dht)
 	_, err := routingDiscovery.Advertise(ctx, rendezvous)
@@ -55,9 +51,7 @@ func StartDiscoveryFromDHT(ctx context.Context, h host.Host, dht *dht.IpfsDHT, r
 				if p.ID == h.ID() {
 					continue
 				}
-				if err = h.Connect(context.Background(), p); err == nil {
-					recv <- p
-				}
+				recv <- p
 			}
 		}
 	}
