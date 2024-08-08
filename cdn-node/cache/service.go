@@ -2,11 +2,13 @@ package cache
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
 	"github.com/CESSProject/cess-dcdn-components/config"
+	"github.com/CESSProject/cess-dcdn-components/logger"
 	"github.com/CESSProject/cess-dcdn-components/protocol"
 	"github.com/CESSProject/p2p-go/core"
 	"github.com/CESSProject/p2p-go/pb"
@@ -55,8 +57,17 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 	err := json.Unmarshal(data, &extReq)
 	if err != nil {
 		resp.Code = core.P2PResponseFailed
+		logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 		return resp, errors.Wrap(err, "read cache service error")
 	}
+	defer func() {
+		if err != nil {
+			log.Println("read cache service: err", err)
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service: error ", err)
+		}
+	}()
+	log.Println("read cache service: request", extReq)
+	logger.GetLogger(types.LOG_CACHE).Info("read cache service: ", extReq)
 
 	userAcc := common.BytesToAddress(extReq.AccountId).Hex() //hex.EncodeToString()
 	switch extReq.Option {
@@ -66,6 +77,7 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 		res, err := json.Marshal(extResp)
 		if err != nil {
 			resp.Code = core.P2PResponseRemoteFailed
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 			return resp, errors.Wrap(err, "read cache service error")
 		}
 		resp.Data = res
@@ -98,6 +110,7 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 		res, err := json.Marshal(extResp)
 		if err != nil {
 			resp.Code = core.P2PResponseRemoteFailed
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 			return resp, errors.Wrap(err, "read cache service error")
 		}
 		resp.Data = res
@@ -106,21 +119,25 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 	case types.OPTION_DOWNLOAD:
 		if !c.cmap.CheckCredit(userAcc, extReq.Data, extReq.Sign) {
 			resp.Code = core.P2PResponseFailed
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 			return resp, errors.Wrap(errors.New("not enough credit points"), "read cache service error")
 		}
 		fname := filepath.Join(req.Roothash, req.Datahash, extReq.WantFile)
 		fpath, err := c.GetCacheRecord(fname)
 		if err != nil {
 			resp.Code = core.P2PResponseFailed
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 			return resp, errors.Wrap(err, "read cache service error")
 		}
 		if _, err := os.Stat(fpath); err != nil {
 			resp.Code = core.P2PResponseRemoteFailed
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 			return resp, errors.Wrap(err, "read cache service error")
 		}
 		f, err := os.Open(fpath)
 		if err != nil {
 			resp.Code = core.P2PResponseRemoteFailed
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 			return resp, errors.Wrap(err, "read cache service error")
 		}
 		defer f.Close()
@@ -128,11 +145,13 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 		fstat, err := f.Stat()
 		if err != nil {
 			resp.Code = core.P2PResponseRemoteFailed
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 			return resp, errors.Wrap(err, "read cache service error")
 		}
 
 		if _, err = f.Seek(req.Offset, 0); err != nil {
 			resp.Code = core.P2PResponseRemoteFailed
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 			return resp, errors.Wrap(err, "read cache service error")
 		}
 
@@ -140,6 +159,7 @@ func (c *Cacher) ReadCacheService(req *pb.ReadfileRequest) (*pb.ReadfileResponse
 		num, err := f.Read(readBuf)
 		if err != nil {
 			resp.Code = core.P2PResponseRemoteFailed
+			logger.GetLogger(types.LOG_CACHE).Error("read cache service error", err)
 			return resp, errors.Wrap(err, "read cache service error")
 		}
 

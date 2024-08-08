@@ -172,7 +172,7 @@ func (cli Client) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuer
 		case err = <-sub.Err():
 			return err
 		case <-ctx.Done():
-			return nil
+			return errors.New("timeout")
 		}
 	}
 	return nil

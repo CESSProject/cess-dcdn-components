@@ -2,10 +2,10 @@ package protocol
 
 import (
 	"context"
-	"log"
 	"math/big"
 	"time"
 
+	"github.com/CESSProject/cess-dcdn-components/logger"
 	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -29,6 +29,14 @@ type Order struct {
 	Term    *big.Int
 }
 
+var (
+	txLogger = logger.GetGlobalLogger().GetLogger("transaction")
+)
+
+func (info NodeInfo) String() string {
+	return string(info.PeerId)
+}
+
 func QueryRegisterInfo(cli *contract.Client, nodeAcc string) (NodeInfo, error) {
 	var info NodeInfo
 	protoContract, err := contract.NewCacheProto(
@@ -42,6 +50,10 @@ func QueryRegisterInfo(cli *contract.Client, nodeAcc string) (NodeInfo, error) {
 	if err != nil {
 		return info, errors.Wrap(err, "query node register info error")
 	}
+	if len(info.PeerId) == 0 || !info.Created {
+		return info, errors.Wrap(errors.New("node not found."), "query node register info error")
+	}
+	info.PeerId = []byte(base58.Encode(info.PeerId))
 	return info, nil
 }
 
@@ -117,24 +129,28 @@ func CreateCacheOrder(cli *contract.Client, nodeAddress string, opts *bind.Trans
 	return tx.Hash().Hex(), [32]byte(orderId), nil
 }
 
-func RegisterNode(cli *contract.Client, tokenAccAddr, peerId string, tokenId, sign []byte, opts *bind.TransactOpts) error {
-
+func RegisterNode(cli *contract.Client, tokenAccAddr, peerId, tokenId string, sign []byte, opts *bind.TransactOpts) error {
 	contractAddr := cli.GetContractAddress(contract.DEFAULT_CACHE_PROTO_CONTRACT_NAME)
 	protoContract, err := contract.NewCacheProto(contractAddr, cli.GetEthClient())
 	if err != nil {
 		return errors.Wrap(err, "register cache node error")
 	}
 	tokenAcc := common.HexToAddress(tokenAccAddr)
-	bigId := big.NewInt(0).SetBytes(tokenId)
+	bigId, ok := big.NewInt(0).SetString(tokenId, 10)
+	if !ok {
+		return errors.Wrap(errors.New("bad token Id"), "register cache node error")
+	}
 	bPeerId, err := base58.Decode(peerId)
 	if err != nil {
 		return errors.Wrap(err, "register cache node error")
 	}
-	_, err = protoContract.Staking(opts, cli.Account, tokenAcc, bigId, bPeerId, sign)
+	hash, err := protoContract.Staking(opts, cli.Account, tokenAcc, bigId, bPeerId, sign)
 	if err != nil {
 		return errors.Wrap(err, "register cache node error")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+
+	txLogger.Debug("register node, tx hash:", hash.Hash())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*300)
 	defer cancel()
 	if err = cli.SubscribeFilterLogs(
 		ctx,
@@ -144,12 +160,10 @@ func RegisterNode(cli *contract.Client, tokenAccAddr, peerId string, tokenId, si
 		func(l types.Log) bool {
 			event, err := protoContract.ParseStaking(l)
 			if err != nil {
+				txLogger.Debug("parse staking event error", err)
 				return true
 			}
-			if event.NodeAcc == cli.Account {
-				return false
-			}
-			return true
+			return event.NodeAcc != cli.Account
 		},
 	); err != nil {
 		return errors.Wrap(err, "register cache node error")
@@ -218,10 +232,10 @@ func ClaimWorkRewardServer(ctx context.Context, cli *contract.Client, opts *bind
 			tx, err := ClaimWorkReward(cli, opts)
 			if err != nil {
 				//TODO: print log
-				log.Printf("claim work reward in term %d error %v \n", term, err)
+				txLogger.Errorf("claim work reward in term %d error %v \n", term, err)
 			} else {
 				//TODO: print log
-				log.Printf("claim work reward in term %d success: %s \n", term, tx)
+				txLogger.Infof("claim work reward in term %d success: %s \n", term, tx)
 			}
 		}
 	}

@@ -1,6 +1,6 @@
 ChainId: 11330     
 ChainRpcs: 
-  - "ws://8.210.223.137:9947/ws"
+  - "wss://testnet-rpc.cess.cloud/ws/"
 GasFreeCap: 108694000460   
 GasLimit: 30000000      
-ContractAddress: "0xDc5950C626bdB597E586CEaa91117579cb10688D"
+ContractAddress: "0x636b7E4E9b7331047b431179809F3546e1f7A841"

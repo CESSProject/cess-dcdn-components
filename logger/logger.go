@@ -19,6 +19,9 @@ type Logger struct {
 }
 
 func GetGlobalLogger() *Logger {
+	if logger == nil {
+		InitGlobalLogger()
+	}
 	return logger
 }
 
@@ -58,4 +61,13 @@ func (lg *Logger) GetLogger(name string) *logrus.Logger {
 	lg.rw.RLock()
 	defer lg.rw.RUnlock()
 	return lg.loggers[name]
+}
+
+func GetLogger(name string) *logrus.Logger {
+	if logger != nil {
+		logger.rw.RLock()
+		defer logger.rw.RUnlock()
+		return logger.loggers[name]
+	}
+	return nil
 }

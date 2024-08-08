@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/CESSProject/p2p-go/core"
@@ -32,10 +33,7 @@ func (n *MDNSDiscoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 }
 func StartDiscoveryFromDHT(ctx context.Context, h host.Host, dht *dht.IpfsDHT, rendezvous string, interval time.Duration, recv chan<- peer.AddrInfo) error {
 	routingDiscovery := routing.NewRoutingDiscovery(dht)
-	_, err := routingDiscovery.Advertise(ctx, rendezvous)
-	if err != nil {
-		return err
-	}
+	routingDiscovery.Advertise(ctx, rendezvous)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -45,6 +43,7 @@ func StartDiscoveryFromDHT(ctx context.Context, h host.Host, dht *dht.IpfsDHT, r
 		case <-ticker.C:
 			peers, err := routingDiscovery.FindPeers(ctx, rendezvous)
 			if err != nil {
+				log.Println("get peer error", err)
 				return err
 			}
 			for p := range peers {

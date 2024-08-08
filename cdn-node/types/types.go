@@ -1,6 +1,12 @@
 package types
 
 const (
+	LOG_NODE  = "node"
+	LOG_TX    = "transaction"
+	LOG_CACHE = "cache"
+)
+
+const (
 	CACHE_NAME       = "light_cache"
 	RECORD_FRAGMENTS = "-fragments"
 	RECORD_REQUESTS  = "-requests"

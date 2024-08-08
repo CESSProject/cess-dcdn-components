@@ -13,6 +13,7 @@ import (
 	"github.com/CESSProject/cess-dcdn-components/cdn-node/cache"
 	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
 	"github.com/CESSProject/cess-dcdn-components/config"
+	"github.com/CESSProject/cess-dcdn-components/logger"
 	"github.com/CESSProject/cess-dcdn-components/protocol"
 	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
 	cess "github.com/CESSProject/cess-go-sdk"
@@ -67,6 +68,7 @@ func cmd_exit_func(cmd *cobra.Command, args []string) {
 	if cpath == "" {
 		cpath, _ = cmd.Flags().GetString("c")
 		if cpath == "" {
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("empty config file path")
 			log.Println("empty config file path")
 			return
 		}
@@ -101,12 +103,14 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 	if cpath == "" {
 		cpath, _ = cmd.Flags().GetString("c")
 		if cpath == "" {
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("empty config file path")
 			log.Println("empty config file path")
 			return
 		}
 	}
 
 	if err := config.ParseDefaultConfig(cpath); err != nil {
+		logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("error", err)
 		log.Println("error", err)
 		return
 	}
@@ -120,6 +124,7 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		cess.TransactionTimeout(time.Second*30),
 	)
 	if err != nil {
+		logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("init cess chain client error", err)
 		log.Println("init cess chain client error", err)
 		return
 	}
@@ -137,6 +142,7 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		out.Tip(fmt.Sprintf("In the synchronization main chain: %d ...", syncSt.CurrentBlock))
 		time.Sleep(time.Second * time.Duration(Ternary(int64(syncSt.HighestBlock-syncSt.CurrentBlock)*6, 30)))
 	}
+	log.Println("p2p port", conf.P2PPort)
 
 	peerNode, err := p2pgo.New(
 		ctx,
@@ -145,11 +151,12 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		p2pgo.BootPeers(conf.Boots),
 		p2pgo.ProtocolPrefix(conf.Network),
 	)
-
 	if err != nil {
-		log.Println("init cess chain client error", err)
+		logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("init P2P Node error", err)
+		log.Println("init P2P Node error", err)
 		return
 	}
+	defer peerNode.Close()
 
 	cacheModule := cacher.NewCacher(
 		time.Duration(conf.Expiration)*time.Minute,
@@ -164,91 +171,107 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		int64(time.Hour*6),
 	)
 	if err != nil {
-		log.Println("init cess chain client error", err)
+		logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("init node selector error", err)
+		log.Println("init node selector error", err)
 		return
 	}
 	cli, err := contract.NewClient(
 		contract.AccountPrivateKey(conf.NodeAccPrivateKey),
 		contract.ChainID(conf.ChainId),
 		contract.ConnectionRpcAddresss(conf.Rpc),
+		contract.EthereumGas(conf.GasFreeCap, conf.GasLimit),
 	)
 	if err != nil {
-		log.Println("init cess chain client error", err)
+		logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("init ethereum client error", err)
+		log.Println("init ethereum client error", err)
 		return
 	}
 	cli.AddWorkContract(conf.ContractAddresss)
 
-	if _, err = protocol.QueryRegisterInfo(cli, cli.Account.Hex()); err != nil {
-		tokenId, err := hex.DecodeString(conf.NodeTokenId)
-		if err != nil {
-			log.Println("init cess chain client error", err)
-			return
-		}
+	if info, err := protocol.QueryRegisterInfo(cli, cli.Account.Hex()); err != nil {
+		// tokenId, err := hex.DecodeString(conf.NodeTokenId)
+		// if err != nil {
+		// 	log.Println("decode token Id error", err)
+		// 	return
+		// }
 		sign, err := hex.DecodeString(conf.TokenAccSign)
 		if err != nil {
-			log.Println("init cess chain client error", err)
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("decode sign error", err)
+			log.Println("decode sign error", err)
 			return
 		}
 		opts, err := cli.NewTransactionOption(context.Background(), conf.Staking)
 		if err != nil {
-			log.Println("init cess chain client error", err)
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("new transaction option error", err)
+			log.Println("new transaction option error", err)
 			return
 		}
 		err = protocol.RegisterNode(
 			cli, conf.TokenAccAddress,
 			peerNode.GetHost().ID().String(),
-			tokenId, sign, opts,
+			conf.NodeTokenId, sign, opts,
 		)
 		if err != nil {
-			log.Println("init cess chain client error", err)
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("register node on chain error", err)
+			log.Println("register node on chain error", err)
 			return
 		}
+	} else {
+		logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Info("get registered node information:", info.String())
+		log.Println("get registered node information:", info.String())
 	}
 
 	cacher := cache.NewCacher(chainSdk, cacheModule, peerNode, selector, cli)
-
 	cacher.SetConfig(conf.CachePrice, cli.Account.Bytes())
 	cacher.RestoreCacheFiles(conf.CacheDir)
 	cacher.RegisterP2pTsFileServiceHandle(cacher.ReadCacheService)
 
-	log.Println("cess light cacher service is running ...")
+	logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Info("🚀 CESS CDN cache service is running ...")
+	log.Println("🚀 CESS CDN cache service is running ...")
+
 	ctx, stop := context.WithCancel(ctx)
 	go func() {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 		<-signals
+		log.Println("get system cancel signal.")
 		stop()
 		log.Println("wait for service to stop ...")
 	}()
 	go func() {
 		if len(conf.Boots) <= 0 {
 			stop()
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("empty boot node list.")
 			log.Println("please configure boot node.")
 			return
 		}
 		err = cacher.RunDiscovery(ctx, conf.Boots[0])
 		if err != nil {
 			stop()
-			log.Println(err)
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("run discovery service error", err)
+			log.Println("run discovery service error", err)
 			return
 		}
 	}()
 	go func() {
 		opts, err := cli.NewTransactionOption(context.Background(), "")
 		if err != nil {
-			log.Println(err)
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("new transacton option error", err)
+			log.Println("new transacton option error", err)
 			stop()
 			return
 		}
 		err = protocol.ClaimWorkRewardServer(context.Background(), cli, opts)
 		if err != nil {
-			log.Println(err)
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("run claim work reward server error", err)
+			log.Println("run claim work reward server error", err)
 			stop()
 			return
 		}
 	}()
 	cacher.RunDownloadServer(ctx, 0)
-	log.Println("cess light cacher service done.")
+	logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Info("🔚 CESS CDN cache service done.")
+	log.Println("🔚 CESS CDN cache service done.")
 }
 
 func Ternary(a, b int64) int64 {

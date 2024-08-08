@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"io/fs"
+	"log"
 	"math/rand"
 	"path/filepath"
 	"runtime"
@@ -14,6 +15,7 @@ import (
 
 	cdnlib "github.com/CESSProject/cess-dcdn-components/cdn-lib"
 	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
+	"github.com/CESSProject/cess-dcdn-components/logger"
 	"github.com/CESSProject/cess-dcdn-components/p2p"
 	"github.com/CESSProject/cess-dcdn-components/protocol"
 	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
@@ -127,6 +129,8 @@ func (c *Cacher) RunDiscovery(ctx context.Context, bootNode string) error {
 					break
 				}
 				c.Selector.FlushPeerNodes(5*time.Second, peer)
+				log.Println("flush cache node peer", peer.ID)
+				logger.GetLogger(types.LOG_CACHE).Info("flush cache node peer", peer.ID)
 			case <-ticker.C:
 			}
 		}
@@ -135,7 +139,7 @@ func (c *Cacher) RunDiscovery(ctx context.Context, bootNode string) error {
 		err = p2p.StartDiscoveryFromMDNS(ctx, c.GetHost(), ch)
 	}()
 	err = p2p.StartDiscoveryFromDHT(
-		ctx,
+		context.Background(),
 		c.GetHost(),
 		c.GetDHTable(),
 		p2p.DISCOVERY_RENDEZVOUS,
@@ -235,6 +239,7 @@ func (c *Cacher) RunDownloadServer(ctx context.Context, threadNum int) {
 					}
 					err = c.DownloadFiles(hashs[0], hashs[1])
 					if err != nil {
+						logger.GetLogger(types.LOG_CACHE).Error("download files error", err)
 						c.dlQueue.CompareAndSwap(key, true, false)
 					}
 					c.dlQueue.CompareAndDelete(key, true)
@@ -318,10 +323,12 @@ func (c *Cacher) DownloadFiles(fhash, shash string) error {
 			//
 			err = c.ReadFileAction(peer.ID(bk), fhash, hash, fpath, config.FragmentSize)
 			if err != nil {
+				logger.GetLogger(types.LOG_CACHE).Errorf("read file from miner %v error %v", peer.ID(bk), err)
 				continue
 			}
 			err = c.MoveFileToCache(fname, fpath)
 			if err != nil {
+				logger.GetLogger(types.LOG_CACHE).Errorf("move file %s to cache error %v", fname, err)
 				continue
 			}
 			count++
