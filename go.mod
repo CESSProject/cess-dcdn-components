@@ -6,8 +6,8 @@ toolchain go1.22.4
 
 require (
 	github.com/CESSProject/cess-go-sdk v0.6.1
-	github.com/CESSProject/cess-go-tools v0.2.6
-	github.com/CESSProject/p2p-go v0.3.4-0.20240425114510-1597062052fd
+	github.com/CESSProject/cess-go-tools v0.2.14
+	github.com/CESSProject/p2p-go v0.4.0
 	github.com/ethereum/go-ethereum v1.10.20
 	github.com/libp2p/go-libp2p v0.32.2
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2

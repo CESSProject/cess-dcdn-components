@@ -2,19 +2,23 @@ package cdnlib
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
+	"github.com/CESSProject/cess-dcdn-components/cdn-lib/types"
+	"github.com/CESSProject/cess-dcdn-components/p2p"
 	"github.com/CESSProject/cess-go-sdk/chain"
 	"github.com/CESSProject/cess-go-sdk/config"
 	"github.com/CESSProject/cess-go-sdk/core/crypte"
 	"github.com/CESSProject/cess-go-sdk/core/erasure"
 	"github.com/CESSProject/p2p-go/core"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/pkg/errors"
 )
 
@@ -25,7 +29,7 @@ type Options struct {
 	WantFile string
 }
 
-func setOptions(req *types.Request, opt *Options) {
+func setOptions(req *types.CacheRequest, opt *Options) {
 	if req == nil || opt == nil {
 		return
 	}
@@ -35,13 +39,13 @@ func setOptions(req *types.Request, opt *Options) {
 	req.WantFile = opt.WantFile
 }
 
-func DailCacheNode(peerNode *core.PeerNode, peerId peer.ID) (types.QueryResponse, error) {
-	var resp types.QueryResponse
+func DailCacheNode(h host.Host, peerId peer.ID) (types.CacheResponse, error) {
+	var resp types.CacheResponse
 	buf := bytes.NewBuffer([]byte{})
-	req := types.Request{
+	req := types.CacheRequest{
 		Option: types.OPTION_DAIL,
 	}
-	err := SendRequestToCacher(peerNode, peerId, "", "", req, buf)
+	err := SendRequestToCacher(h, peerId, req, buf)
 	if err != nil {
 		return resp, errors.Wrap(err, "dail cache node error")
 	}
@@ -56,14 +60,14 @@ func DailCacheNode(peerNode *core.PeerNode, peerId peer.ID) (types.QueryResponse
 	return resp, nil
 }
 
-func QueryFileInfoFromCache(peerNode *core.PeerNode, peerId peer.ID, fileHash, segmentHash string, opt *Options) (types.QueryResponse, error) {
-	var resp types.QueryResponse
+func QueryFileInfoFromCache(h host.Host, peerId peer.ID, opt *Options) (types.CacheResponse, error) {
+	var resp types.CacheResponse
 	buf := bytes.NewBuffer([]byte{})
-	req := types.Request{
+	req := types.CacheRequest{
 		Option: types.OPTION_QUERY,
 	}
 	setOptions(&req, opt)
-	err := SendRequestToCacher(peerNode, peerId, fileHash, segmentHash, req, buf)
+	err := SendRequestToCacher(h, peerId, req, buf)
 	if err != nil {
 		return resp, errors.Wrap(err, "query file info error")
 	}
@@ -78,13 +82,13 @@ func QueryFileInfoFromCache(peerNode *core.PeerNode, peerId peer.ID, fileHash, s
 	return resp, nil
 }
 
-func DownloadFileFromCache(peerNode *core.PeerNode, peerId peer.ID, fpath, fileHash, segmentHash string, opt *Options) error {
+func DownloadFileFromCache(peerNode *core.PeerNode, peerId peer.ID, fpath string, opt *Options) error {
 	buf := bytes.NewBuffer([]byte{})
-	req := types.Request{
+	req := types.CacheRequest{
 		Option: types.OPTION_DOWNLOAD,
 	}
 	setOptions(&req, opt)
-	err := SendRequestToCacher(peerNode, peerId, fileHash, segmentHash, req, buf)
+	err := SendRequestToCacher(peerNode, peerId, req, buf)
 	if err != nil {
 		return errors.Wrap(err, "download file error")
 	}
@@ -247,14 +251,28 @@ func DownloadFileFromStorage(fdir, fileHash, cipher string, chainCli *chain.Chai
 	return userfile, nil
 }
 
-func SendRequestToCacher(handle *core.PeerNode, peerId peer.ID, roothash, datahash string, req types.Request, resp io.Writer) error {
+func SendRequestToCacher(handle host.Host, peerId peer.ID, req types.CacheRequest, resp io.Writer) error {
 	extData, err := json.Marshal(req)
 	if err != nil {
 		return errors.Wrap(err, "send request to cacher error")
 	}
-	err = handle.ReadFileActionWithExtension(peerId, "", "", resp, extData)
+	s, err := handle.NewStream(context.Background(), peerId, protocol.ID(p2p.CdnCacheProtocol))
 	if err != nil {
 		return errors.Wrap(err, "send request to cacher error")
+	}
+	defer s.Close()
+	if _, err = s.Write(extData); err != nil {
+		s.Reset()
+		return errors.Wrap(err, "send request to cacher error")
+	}
+	rn, err := io.Copy(resp, s)
+	if err != nil {
+		s.Reset()
+		return errors.Wrap(err, "send request to cacher error")
+	}
+	if rn == 0 {
+		s.Reset()
+		return errors.Wrap(errors.New("empty response"), "send request to cacher error")
 	}
 	return nil
 }

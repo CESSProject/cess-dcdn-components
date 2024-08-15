@@ -7,13 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	cdnlib "github.com/CESSProject/cess-dcdn-components/cdn-lib"
-	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
+	"github.com/CESSProject/cess-dcdn-components/cdn-lib/types"
 	"github.com/CESSProject/cess-go-sdk/config"
 	"github.com/CESSProject/cess-go-sdk/core/erasure"
 	"github.com/CESSProject/cess-go-sdk/core/process"
@@ -37,7 +38,7 @@ func (c *Client) DownloadFile(ctx context.Context, fdir, fhash, cipher string) (
 	if err != nil {
 		return dlfile, errors.Wrap(err, "download file error")
 	}
-	cacherNum := c.cachers.GetPeersNumber()
+	cacherNum := c.Cachers.GetPeersNumber()
 	segmentPaths := make([]string, 0)
 
 	defer func() {
@@ -116,7 +117,7 @@ func (c *Client) DownloadSegment(ctx context.Context, fhash, shash, sdir string)
 		return "", errors.Wrap(err, "download file segment error")
 	}
 
-	cacherNum := c.cachers.GetPeersNumber()
+	cacherNum := c.Cachers.GetPeersNumber()
 	cacherdMap, err := c.QuerySegmentFromCachers(fhash, shash, cacherNum, cacherNum)
 	if err != nil || len(cacherdMap) <= 0 {
 
@@ -347,9 +348,9 @@ func (c *Client) DownloadFileFromGateway(url, fpath, fhash string) error {
 	return nil
 }
 
-func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum, threadNum int) (map[peer.ID]types.QueryResponse, error) {
-	cachedPeers := make(map[peer.ID]types.QueryResponse)
-	peerNum := c.cachers.GetPeersNumber()
+func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum, threadNum int) (map[peer.ID]types.CacheResponse, error) {
+	cachedPeers := make(map[peer.ID]types.CacheResponse)
+	peerNum := c.Cachers.GetPeersNumber()
 	if cacherNum > peerNum {
 		cacherNum = peerNum
 	}
@@ -359,7 +360,7 @@ func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum
 	if cacherNum < threadNum {
 		threadNum = peerNum
 	}
-	itor, err := c.cachers.NewPeersIterator(cacherNum)
+	itor, err := c.Cachers.NewPeersIterator(cacherNum)
 	if err != nil {
 		return nil, err
 	}
@@ -377,14 +378,17 @@ func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum
 					return
 				}
 				resp, err := cdnlib.QueryFileInfoFromCache(
-					c.PeerNode, peer.ID, fileHash, segmentHash,
-					&cdnlib.Options{Account: c.cmp.GetClient().Account.Bytes()},
+					c.PeerNode, peer.ID,
+					&cdnlib.Options{
+						Account:  c.EthClient.Account.Bytes(),
+						WantFile: path.Join(fileHash, segmentHash),
+					},
 				)
 				if err != nil {
-					c.cachers.Feedback(peer.ID.String(), false)
+					c.Cachers.Feedback(peer.ID.String(), false)
 					continue
 				}
-				c.cachers.Feedback(peer.ID.String(), true)
+				c.Cachers.Feedback(peer.ID.String(), true)
 				if resp.Status == types.STATUS_HIT {
 					lock.Lock()
 					cachedPeers[peer.ID] = resp
@@ -399,7 +403,7 @@ func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum
 	return cachedPeers, nil
 }
 
-func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, cachedPeer map[peer.ID]types.QueryResponse) []string {
+func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, cachedPeer map[peer.ID]types.CacheResponse) []string {
 	cachedFragments := map[string]struct{}{}
 	res := make([]string, 0)
 	dl, dld := 0, 0
@@ -437,10 +441,10 @@ func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, 
 					}
 					fpath := filepath.Join(fdir, fragment)
 					if err := cdnlib.DownloadFileFromCache(
-						c.PeerNode, id, fpath, fileHash, segmentHash,
+						c.PeerNode, id, fpath,
 						&cdnlib.Options{
-							WantFile: fragment,
-							Account:  c.cmp.GetClient().Account.Bytes(),
+							WantFile: path.Join(fileHash, segmentHash, fragment),
+							Account:  c.EthClient.Account.Bytes(),
 						},
 					); err != nil {
 						lock.Lock()
@@ -560,7 +564,7 @@ func (c *Client) UploadServer(ctx context.Context) {
 			c.uploadQueue <- task
 			continue
 		}
-		itor, err := c.storages.NewPeersIterator(config.DataShards + config.ParShards)
+		itor, err := c.Storages.NewPeersIterator(config.DataShards + config.ParShards)
 		if err != nil {
 			c.uploadQueue <- task
 			time.Sleep(time.Minute)
@@ -588,7 +592,7 @@ func (c *Client) UploadServer(ctx context.Context) {
 				}
 				err = c.Connect(context.Background(), peer)
 				if err != nil {
-					c.storages.Feedback(peer.ID.String(), false)
+					c.Storages.Feedback(peer.ID.String(), false)
 					continue
 				}
 				uploaded := true
@@ -601,7 +605,7 @@ func (c *Client) UploadServer(ctx context.Context) {
 					}
 				}
 				if !uploaded {
-					c.storages.Feedback(peer.ID.String(), false)
+					c.Storages.Feedback(peer.ID.String(), false)
 					continue
 				}
 				task.Group[i].Saved = true

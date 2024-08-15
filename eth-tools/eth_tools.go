@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
+	"github.com/CESSProject/cess-dcdn-components/cdn-lib/types"
 	"github.com/CESSProject/cess-dcdn-components/config"
 	"github.com/CESSProject/cess-dcdn-components/eth-tools/tools"
 	"github.com/spf13/cobra"

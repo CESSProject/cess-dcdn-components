@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/CESSProject/cess-dcdn-components/cdn-lib/types"
 	"github.com/CESSProject/cess-dcdn-components/cdn-node/cache"
-	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
 	"github.com/CESSProject/cess-dcdn-components/config"
 	"github.com/CESSProject/cess-dcdn-components/logger"
 	"github.com/CESSProject/cess-dcdn-components/protocol"
@@ -142,8 +142,7 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		out.Tip(fmt.Sprintf("In the synchronization main chain: %d ...", syncSt.CurrentBlock))
 		time.Sleep(time.Second * time.Duration(Ternary(int64(syncSt.HighestBlock-syncSt.CurrentBlock)*6, 30)))
 	}
-	log.Println("p2p port", conf.P2PPort)
-
+	log.Println("node p2p port", conf.P2PPort)
 	peerNode, err := p2pgo.New(
 		ctx,
 		p2pgo.ListenPort(conf.P2PPort),
@@ -151,12 +150,21 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 		p2pgo.BootPeers(conf.Boots),
 		p2pgo.ProtocolPrefix(conf.Network),
 	)
+
 	if err != nil {
 		logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("init P2P Node error", err)
 		log.Println("init P2P Node error", err)
 		return
 	}
 	defer peerNode.Close()
+
+	if _, err = os.Stat(types.TempDir); err != nil {
+		if err = os.Mkdir(types.TempDir, 0755); err != nil {
+			logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Error("make temp dir error ", err)
+			log.Println("make temp dir error", err)
+			return
+		}
+	}
 
 	cacheModule := cacher.NewCacher(
 		time.Duration(conf.Expiration)*time.Minute,
@@ -224,8 +232,9 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 	cacher := cache.NewCacher(chainSdk, cacheModule, peerNode, selector, cli)
 	cacher.SetConfig(conf.CachePrice, cli.Account.Bytes())
 	cacher.RestoreCacheFiles(conf.CacheDir)
-	cacher.RegisterP2pTsFileServiceHandle(cacher.ReadCacheService)
+	//peerNode.EnableRecv()
 
+	log.Println("cache node network profix", peerNode.ProtocolPrefix)
 	logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Info("🚀 CESS CDN cache service is running ...")
 	log.Println("🚀 CESS CDN cache service is running ...")
 

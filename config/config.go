@@ -14,7 +14,7 @@ const (
 	DEVNET_PROTO_PREFIX    = "/devnet"
 	DEFAULT_CACHE_PATH     = "./cache/"
 	DEFAULT_WORKSPACE      = "./workspace/"
-	DEFAULT_CACHE_PRICE    = 10000000000000000
+	DEFAULT_CACHE_PRICE    = "10000000000000000"
 	DEFAULT_GAS_FREE_CAP   = 108694000460
 	DEFAULT_GAS_LIMIT      = 30000000
 	DEFAULT_DOWNLOAD_POINT = 4
@@ -67,7 +67,7 @@ type P2PConfig struct {
 }
 
 type CacherConfig struct {
-	CachePrice    uint64
+	CachePrice    string
 	CacheDir      string
 	Expiration    int64
 	CacheSize     int64
@@ -103,11 +103,11 @@ func ParseDefaultConfig(fpath string) error {
 	if _default.Expiration <= 0 || _default.Expiration > 7*24*60 {
 		_default.Expiration = 3 * 60
 	}
-	switch _default.Network {
-	case MAINNET_PROTO_PREFIX, TESTNET_PROTO_PREFIX, DEVNET_PROTO_PREFIX:
-	default:
-		_default.Network = TESTNET_PROTO_PREFIX
-	}
+	// switch _default.Network {
+	// case MAINNET_PROTO_PREFIX, TESTNET_PROTO_PREFIX, DEVNET_PROTO_PREFIX:
+	// default:
+	// 	_default.Network = TESTNET_PROTO_PREFIX
+	// }
 
 	if _default.CacheDir == "" {
 		_default.CacheDir = DEFAULT_CACHE_PATH
@@ -115,7 +115,7 @@ func ParseDefaultConfig(fpath string) error {
 	if _default.WorkSpace == "" {
 		_default.WorkSpace = DEFAULT_WORKSPACE
 	}
-	if _default.CachePrice == 0 {
+	if _default.CachePrice == "" {
 		_default.CachePrice = DEFAULT_CACHE_PRICE
 	}
 	if _default.FreeDownloads == 0 {

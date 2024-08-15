@@ -5,7 +5,7 @@ CessChainConfig:
     - "wss://testnet-rpc.cess.cloud/ws"
     - "wss://testnet-rpc.cess.network/ws"
   # The storage network you want to connect to, "mainnet" or "testnet"
-  Network: 
+  Network: ""
   # CESS account mnemonic of cacher
   Mnemonic: "skill income exile ethics sick excess sea deliver medal junk update fault"
 
@@ -29,7 +29,7 @@ CacherConfig:
   # Directory to store file cache, default path: Workspace/filecache/
   CacheDir:
   # Price of downloading a single fragment (unit is 1/10^18 CESS or TCESS, is an integer)
-  CachePrice: 
+  CachePrice: ""
   # The number of free downloads allowed for users
   FreeDownloads:
 

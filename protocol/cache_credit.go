@@ -99,7 +99,7 @@ func (c *CreditMap) GetUserCredit(key string) CreditItem {
 
 func CheckPointLimit(item CreditItem, limit int, size uint64, isCacher bool) (int, bool) {
 	var res bool
-	point := (item.ReceivedBytes / size) / uint64(item.Checkout)
+	point := (item.ReceivedBytes / size) - uint64(item.Checkout)
 	if point > POINT_LIMIT {
 		point = POINT_LIMIT
 	}
@@ -120,7 +120,7 @@ func CheckPointLimit(item CreditItem, limit int, size uint64, isCacher bool) (in
 	return deadLine, res
 }
 
-func (c *CreditMap) PaymentCacheCreditBill(key, peerId string, price, size uint64, creditLimit int, maxFee int64) ([]byte, []byte, error) {
+func (c *CreditMap) PaymentCacheCreditBill(key, peerId, price string, size uint64, creditLimit int, maxFee string) ([]byte, []byte, error) {
 	credit := c.GetUserCredit(key)
 	bill, ok := CheckPointLimit(credit, creditLimit, size, true)
 	if ok {
@@ -138,14 +138,22 @@ func (c *CreditMap) PaymentCacheCreditBill(key, peerId string, price, size uint6
 	if !bytes.Equal(info.PeerId, bPeerId) {
 		return nil, nil, errors.New("peer ID does not match the registered one")
 	}
-	value := int64(price * uint64(bill))
-
-	opts, err := c.ethClient.NewTransactionOption(context.Background(), big.NewInt(value).String())
+	value, ok := big.NewInt(0).SetString(price, 10)
+	if !ok {
+		return nil, nil, errors.New("bad cache service price")
+	}
+	value = value.Mul(value, big.NewInt(int64(bill)))
+	cacheFeeLimit, ok := big.NewInt(0).SetString(maxFee, 10)
+	if !ok {
+		return nil, nil, errors.New("bad cache fee limit")
+	}
+	opts, err := c.ethClient.NewTransactionOption(context.Background(), value.String())
 	if err != nil {
 		return nil, nil, err
 	}
-	if value > maxFee {
-		return nil, nil, fmt.Errorf("cacher order bill(%d) exceeds the preset maximum amount(%d)", value, maxFee)
+
+	if value.Cmp(cacheFeeLimit) == 1 {
+		return nil, nil, fmt.Errorf("cacher order bill(%v) exceeds the preset maximum amount(%v)", value, maxFee)
 	}
 	_, orderId, err := CreateCacheOrder(c.ethClient, key, opts)
 	if err != nil {
@@ -193,7 +201,10 @@ func (c *CreditMap) CheckCredit(key string, data, sign []byte) bool {
 			return res
 		}
 		//claim Order
-		price := big.NewInt(int64(config.GetConfig().CachePrice))
+		price, ok := big.NewInt(0).SetString(config.GetConfig().CachePrice, 10)
+		if !ok {
+			price.SetInt64(10000000000000000)
+		}
 		num := order.Value.Div(order.Value, price).Int64()
 		item.ReceivedBytes += uint64(num) * config.CACHE_BLOCK_SIZE
 		item.Point += int(num)

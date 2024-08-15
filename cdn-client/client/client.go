@@ -2,11 +2,12 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"time"
 
 	cdnlib "github.com/CESSProject/cess-dcdn-components/cdn-lib"
-	"github.com/CESSProject/cess-dcdn-components/cdn-node/types"
+	"github.com/CESSProject/cess-dcdn-components/cdn-lib/types"
 	"github.com/CESSProject/cess-dcdn-components/config"
 	"github.com/CESSProject/cess-dcdn-components/p2p"
 	"github.com/CESSProject/cess-dcdn-components/protocol"
@@ -33,14 +34,15 @@ var (
 
 type Client struct {
 	*chain.ChainClient
-	Mnemonic string
-	cachers  scheduler.Selector
-	storages scheduler.Selector
+	EthClient *contract.Client
+	Mnemonic  string
+	Cachers   scheduler.Selector
+	Storages  scheduler.Selector
 	*core.PeerNode
-	CacheFeeLimit int64
+	CacheFeeLimit string
 	tmpDir        string
 	cmp           *protocol.CreditMap
-	osQueue       chan types.QueryResponse //order settlement queue
+	osQueue       chan types.CacheResponse //order settlement queue
 	uploadQueue   chan UploadStats
 }
 
@@ -77,14 +79,15 @@ func NewClient(chainCli chain.ChainClient, peerNode *core.PeerNode, cachers, sto
 	//mnemonic, tmpDir string
 	return &Client{
 		ChainClient: &chainCli,
+		EthClient:   cli,
 		PeerNode:    peerNode,
-		cachers:     cachers,
-		storages:    storages,
+		Cachers:     cachers,
+		Storages:    storages,
 		cmp:         protocol.NewCreditManager(cli),
 	}
 }
 
-func (c *Client) SetConfig(Mnemonic, tmpDir string, CacheFeeLimit int64, uploadQueueSize int) {
+func (c *Client) SetConfig(Mnemonic, tmpDir string, CacheFeeLimit string, uploadQueueSize int) {
 	c.Mnemonic = Mnemonic
 	c.tmpDir = tmpDir
 	c.CacheFeeLimit = CacheFeeLimit
@@ -111,9 +114,9 @@ func (c *Client) PaymentCacheOrder() error {
 			continue
 		}
 		res, err := cdnlib.QueryFileInfoFromCache(
-			c.PeerNode, peer.ID(bpid), "", "",
+			c.PeerNode, peer.ID(bpid),
 			&cdnlib.Options{
-				Account: c.cmp.GetClient().Account.Bytes(),
+				Account: c.EthClient.Account.Bytes(),
 				Data:    orderId,
 				Sign:    sign,
 			},
@@ -138,23 +141,28 @@ func (c *Client) RunDiscovery(ctx context.Context, bootNode string) error {
 			select {
 			case <-ctx.Done():
 				return
-			case peer := <-cacheCh:
-				if peer.ID.Size() == 0 {
-					break
-				}
-				c.cachers.FlushPeerNodes(5*time.Second, peer)
 			case peer := <-peerCh:
 				if peer.ID.Size() == 0 {
 					break
 				}
+				c.Storages.FlushPeerNodes(5*time.Second, peer)
+			case peer := <-cacheCh:
+				if peer.ID.Size() == 0 {
+					break
+				}
+				log.Println("find cacher ", peer.ID)
 				//
-				if c.cachers.GetPeersNumber() >= MaxStorageNodeNum {
+				if c.Cachers.GetPeersNumber() >= MaxCacheNodeNum {
 					continue
 				}
-				if _, err := cdnlib.DailCacheNode(c.PeerNode, peer.ID); err == nil {
+				if res, err := cdnlib.DailCacheNode(c.PeerNode, peer.ID); err != nil {
+					log.Println("dail", peer.ID, " error ", err)
 					continue
+				} else {
+					jbytes, _ := json.Marshal(res)
+					log.Println("dail cacher success, response: ", string(jbytes))
 				}
-				c.storages.FlushPeerNodes(5*time.Second, peer)
+				c.Cachers.FlushPeerNodes(15*time.Second, peer)
 			}
 
 		}
@@ -167,7 +175,7 @@ func (c *Client) RunDiscovery(ctx context.Context, bootNode string) error {
 			ctx,
 			c.GetHost(),
 			c.GetDHTable(),
-			c.GetRendezvousVersion(),
+			p2p.DISCOVERY_RENDEZVOUS,
 			time.Second*3, cacheCh,
 		)
 	}()
