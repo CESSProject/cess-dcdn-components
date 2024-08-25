@@ -10,16 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CESSProject/cess-dcdn-components/cdn-client/client"
-	cdnlib "github.com/CESSProject/cess-dcdn-components/cdn-lib"
-	"github.com/CESSProject/cess-dcdn-components/cdn-node/cache"
-	"github.com/CESSProject/cess-dcdn-components/p2p"
-	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
+	"github.com/CESSProject/cess-dcdn-components/cd2n-client/client"
+	cdnlib "github.com/CESSProject/cess-dcdn-components/cd2n-lib"
+	"github.com/CESSProject/cess-dcdn-components/cd2n-lib/credit"
+	"github.com/CESSProject/cess-dcdn-components/cd2n-lib/p2p"
+	"github.com/CESSProject/cess-dcdn-components/cd2n-lib/protocol"
+	"github.com/CESSProject/cess-dcdn-components/cd2n-lib/types"
 	cess "github.com/CESSProject/cess-go-sdk"
 	"github.com/CESSProject/cess-go-tools/scheduler"
 	p2pgo "github.com/CESSProject/p2p-go"
 	"github.com/CESSProject/p2p-go/core"
 	"github.com/CESSProject/p2p-go/out"
+	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mr-tron/base58/base58"
 )
@@ -65,27 +67,29 @@ func TestDailCacheNode(t *testing.T) {
 	t.Log("success", string(jbytes))
 }
 
-func TestDailCacheNodes(t *testing.T) {
+func TestQueryCacheNodes(t *testing.T) {
 	cli := InitTestClient()
 	if cli == nil {
 		t.Fatal("init test client error")
 	}
 	for {
-		t.Log("peers: ", cli.PeerNode.Peerstore().Peers().Len())
+		t.Log("peers: ", cli.CacheCli.Peerstore().Peers().Len())
 		//cli.PeerNode.GetDHTable().FindProviders()
-		bPeerId, err := base58.Decode("12D3KooWLK8DUHynHLxiPpoDtmEKh85Hs95V7mGNfUAZk4muFwJV") //12D3KooWLK8DUHynHLxiPpoDtmEKh85Hs95V7mGNfUAZk4muFwJV
+		bPeerId, err := base58.Decode("12D3KooWRWnGtKeMT7AZchjfkavhS3uWKo4tDgc8T2nUaswNHCGN") //12D3KooWLK8DUHynHLxiPpoDtmEKh85Hs95V7mGNfUAZk4muFwJV
 		if err != nil {
 			t.Log("register cache node error", err)
 			continue
 		}
+		t.Log("request 12D3KooWRWnGtKeMT7AZchjfkavhS3uWKo4tDgc8T2nUaswNHCGN")
 		resp, err := cdnlib.QueryFileInfoFromCache(
-			cli.PeerNode, peer.ID(bPeerId),
-			&cdnlib.Options{
-				Account: cli.EthClient.Account[:],
-				WantFile: path.Join(
-					"db48efe9868085043c211635233583f38d0c6f25724d3e42d69cfb4a422708f5",
-					"945e3bfe85a6e1ded2553691b4d6c2d62e7a50cf8511bf7a0c942f2d33e9d055",
-				),
+			cli.CacheCli.Host, peer.ID(bPeerId),
+			types.CacheRequest{
+				AccountId: cli.GetPublickey(),
+				WantUrl:   "https://gw.crust-gateway.xyz/ipfs/bafybeicf5cnabenlocs35n56eggjryq277dxstnkpnv6h5lqkidfd7nsqu",
+				// WantFile: path.Join(
+				// 	"8e962f1d4c5567f942c94596448acb3c1194485f4afeee584eb48978340b32cd",
+				// 	"153cecaef9be527209c9be556b89b03c9411b42cfd9875e744f37fbad4997676",
+				// ),
 			})
 		if err != nil {
 			t.Log("query cache node file info error", err)
@@ -99,43 +103,37 @@ func TestDailCacheNodes(t *testing.T) {
 		}
 		t.Log("query success", string(jbytes))
 		time.Sleep(5 * time.Second)
-		// num := cli.Cachers.GetPeersNumber()
-		// if num == 0 {
-		// 	time.Sleep(time.Second * 3)
-		// 	continue
-		// }
-		// log.Println("get peers number", num)
-		// if num > cache.MaxNeigborNum {
-		// 	num = cache.MaxNeigborNum
-		// }
-		// itoa, err := cli.Cachers.NewPeersIterator(num)
-		// if err != nil {
-		// 	t.Log("new peers iterator", err)
-		// 	time.Sleep(time.Second * 5)
-		// 	continue
-		// }
+	}
+}
 
-		// for peer, ok := itoa.GetPeer(); ok; peer, ok = itoa.GetPeer() {
-		// 	resp, err := cdnlib.QueryFileInfoFromCache(
-		// 		cli.PeerNode, peer.ID,
-		// 		"79f1363e7c6c027bf3ab601db3926e4cd84e22ed3be731387a3c50c8ad5d60b6",
-		// 		"a6a9dd87f12f3121f3396af946e40d526edb7d02c0d848bb1244de6844cf5761",
-		// 		&cdnlib.Options{
-		// 			Account: cli.EthClient.Account[:],
-		// 		})
-		// 	if err != nil {
-		// 		t.Log("query cache node file info error", err)
-		// 		//cli.Cachers.Feedback(peer.ID.String(), false)
-		// 		time.Sleep(time.Second * 10)
-		// 		continue
-		// 	}
-		// 	jbytes, err := json.Marshal(resp)
-		// 	if err != nil {
-		// 		t.Log("marshal response error", err)
-		// 		continue
-		// 	}
-		// 	t.Log("query success", string(jbytes))
-		// }
+func TestGetFileCacheNodes(t *testing.T) {
+	cli := InitTestClient()
+	if cli == nil {
+		t.Fatal("init test client error")
+	}
+	for {
+		t.Log("peers: ", cli.CacheCli.Peerstore().Peers().Len())
+		//cli.PeerNode.GetDHTable().FindProviders()
+		bPeerId, err := base58.Decode("12D3KooWRWnGtKeMT7AZchjfkavhS3uWKo4tDgc8T2nUaswNHCGN") //12D3KooWLK8DUHynHLxiPpoDtmEKh85Hs95V7mGNfUAZk4muFwJV
+		if err != nil {
+			t.Log("register cache node error", err)
+			continue
+		}
+		t.Log("request 12D3KooWRWnGtKeMT7AZchjfkavhS3uWKo4tDgc8T2nUaswNHCGN")
+		err = cdnlib.DownloadFileFromCache(
+			cli.CacheCli.Host, peer.ID(bPeerId), "./test.mp4",
+			types.CacheRequest{
+				AccountId: cli.GetPublickey(),
+				WantUrl:   "https://gw.crust-gateway.xyz/ipfs/bafybeicf5cnabenlocs35n56eggjryq277dxstnkpnv6h5lqkidfd7nsqu",
+			},
+		)
+		if err != nil {
+			t.Log("query cache node file info error", err)
+			time.Sleep(time.Second * 10)
+			continue
+		}
+		t.Log("query success")
+		break
 	}
 
 }
@@ -187,12 +185,27 @@ func InitTestClient() *client.Client {
 		out.Tip(fmt.Sprintf("In the synchronization main chain: %d ...", syncSt.CurrentBlock))
 		time.Sleep(time.Second * time.Duration(Ternary(int64(syncSt.HighestBlock-syncSt.CurrentBlock)*6, 30)))
 	}
-	peerNode, err := p2pgo.New(
+	storageNode, err := p2pgo.New(
 		context.Background(),
 		p2pgo.ListenPort(4001),
 		p2pgo.Workspace("./testP2P"),
 		p2pgo.BootPeers([]string{"_dnsaddr.boot-miner-testnet.cess.network"}),
 		p2pgo.ProtocolPrefix(""),
+	)
+	if err != nil {
+		log.Println("init storage p2p client error", err)
+		return nil
+	}
+
+	key, err := p2p.Identification(path.Join("./testP2P", ".key"))
+	if err != nil {
+		log.Println("init p2p identification error", err)
+		return nil
+	}
+	cacheNode, err := p2p.NewPeerNode(
+		"/cdnnet", p2p.Version, []string{""},
+		libp2p.Identity(key),
+		libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 4002)),
 	)
 	if err != nil {
 		log.Println("init P2P Node error", err)
@@ -201,7 +214,7 @@ func InitTestClient() *client.Client {
 	cacherSelc, err := scheduler.NewNodeSelector(
 		scheduler.PRIORITY_STRATEGY,
 		"./cacher_list",
-		cache.MaxNeigborNum,
+		64,
 		int64(time.Millisecond*1000),
 		int64(time.Hour*6),
 	)
@@ -212,7 +225,7 @@ func InitTestClient() *client.Client {
 	storageSelc, err := scheduler.NewNodeSelector(
 		scheduler.PRIORITY_STRATEGY,
 		"./storage_list",
-		cache.MaxNeigborNum,
+		128,
 		int64(time.Millisecond*1000),
 		int64(time.Hour*6),
 	)
@@ -220,17 +233,39 @@ func InitTestClient() *client.Client {
 		log.Println("init node selector error", err)
 		return nil
 	}
-	cli, err := contract.NewClient(
-		contract.AccountPrivateKey("c126731601a2b8e1a10149b548972e3dc577b9b2e174dcb5de326d4d6e928df5"),
-		contract.ChainID(11330),
-		contract.ConnectionRpcAddresss(rpcs),
-		contract.EthereumGas(108694000460, 30000000),
+	cli, err := protocol.NewClient(
+		protocol.AccountPrivateKey("c126731601a2b8e1a10149b548972e3dc577b9b2e174dcb5de326d4d6e928df5"),
+		protocol.ChainID(11330),
+		protocol.ConnectionRpcAddresss(rpcs),
+		protocol.EthereumGas(108694000460, 30000000),
 	)
 	if err != nil {
 		log.Println("init ethereum client error", err)
 		return nil
 	}
-	lightClient := client.NewClient(*chainSdk, peerNode, cacherSelc, storageSelc, cli)
+	contract, err := protocol.NewProtoContract(
+		cli.GetEthClient(),
+		"0x7352188979857675C3aD1AA6662326ebD6DDBf6d",
+		cli.Account.Hex(),
+		cli.NewTransactionOption,
+		cli.SubscribeFilterLogs,
+	)
+	if err != nil {
+		log.Println("init contract client error", err)
+		return nil
+	}
+	cmg, err := credit.NewCreditManager(
+		cli.Account.Hex(),
+		"test_credit_record",
+		"10000000000",
+		0, contract,
+	)
+	if err != nil {
+		log.Println("init credit client error", err)
+		return nil
+	}
+	sk := cli.GetPrivateKey()
+	lightClient := client.NewClient(*chainSdk, storageNode, cacheNode, cacherSelc, storageSelc, cmg, &sk)
 	lightClient.SetConfig("", "./temp", "1000000000000000000000", 100)
 	go lightClient.RunDiscovery(context.Background(), "_dnsaddr.boot-miner-testnet.cess.network")
 	return lightClient

@@ -1,3 +1,6 @@
+NodeWorkSpace: "./"
+ActorSvcPort: 8080
+
 CessChainConfig:
   # The rpc endpoint of the chain node
   Rpc:
@@ -5,18 +8,29 @@ CessChainConfig:
     - "wss://testnet-rpc.cess.cloud/ws"
     - "wss://testnet-rpc.cess.network/ws"
   # The storage network you want to connect to, "mainnet" or "testnet"
-  Network: ""
+  Network: "/cdnnet"
   # CESS account mnemonic of cacher
   Mnemonic: "skill income exile ethics sick excess sea deliver medal junk update fault"
 
-P2PConfig:
+ResrcP2P:
   # Bootstrap Nodes
   Boots:
     # test network
     - "_dnsaddr.boot-miner-testnet.cess.network"
 
   # Service workspace
-  Workspace: "/"
+  Workspace: "./resource_p2p"
+  # P2P communication port
+  P2PPort: 4006
+
+CacheP2P:
+  # Bootstrap Nodes
+  Boots:
+    # test network
+    - "/ip4/0.0.0.0/tcp/4008"
+
+  # Service workspace
+  Workspace: "./cache_p2p"
   # P2P communication port
   P2PPort: 4006
 
@@ -26,7 +40,7 @@ CacherConfig:
   CacheSize: 512
   # File cache expiration time, default 3*60 minutes (unit is minutes)
   Expiration:
-  # Directory to store file cache, default path: Workspace/filecache/
+  # Directory to store file cache, default path: ./cache/
   CacheDir:
   # Price of downloading a single fragment (unit is 1/10^18 CESS or TCESS, is an integer)
   CachePrice: ""
@@ -44,10 +58,8 @@ CdnProtoConfig:
   #Node staking amount
   Staking: "3000000000000000000000"
   #Protocol smart contracts for node registration, order and revenue management, etc.
-  ContractAddresss:
-    - "cache_protocol_contract": "0x7352188979857675C3aD1AA6662326ebD6DDBf6d"
-    #Enter multiple values as a list of string key-value pairs
-    #"cache_protocol_contract": "0xfA326Ce1E9D7d291B40945B6cDdCe8e9Efea9b34"
+  TokenContract: ""
+  ProtoContract: "0x7352188979857675C3aD1AA6662326ebD6DDBf6d"
   # NFT Token Id that needs to be bound to the cache node(license for cache node to join network)
   NodeTokenId: "103025665189611818041125193990140224421208216751558425519579339636262984839876"
   # Cache Node's ethereum account private key (Hexadecimal string, not including '0x')

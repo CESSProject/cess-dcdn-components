@@ -8,7 +8,8 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/CESSProject/cess-dcdn-components/protocol/contract"
+	"github.com/CESSProject/cess-dcdn-components/cd2n-lib/protocol"
+	"github.com/CESSProject/cess-dcdn-components/cd2n-lib/protocol/contract"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -32,11 +33,11 @@ func Keccak256HashWithContractPrefix(hash common.Hash) common.Hash {
 }
 
 func BuyCacherToken(c Config, sk, value string) (string, error) {
-	client, err := contract.NewClient(
-		contract.AccountPrivateKey(sk),
-		contract.ChainID(c.ChainId),
-		contract.ConnectionRpcAddresss(c.ChainRpcs),
-		contract.EthereumGas(c.GasFreeCap, c.GasLimit),
+	client, err := protocol.NewClient(
+		protocol.AccountPrivateKey(sk),
+		protocol.ChainID(c.ChainId),
+		protocol.ConnectionRpcAddresss(c.ChainRpcs),
+		protocol.EthereumGas(c.GasFreeCap, c.GasLimit),
 	)
 	if err != nil {
 		return "", err
