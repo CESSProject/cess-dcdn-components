@@ -185,6 +185,13 @@ func (c *Client) UploadFile(territory, bucket, fpath, cipher string, callback fu
 	return status.FileHash, nil
 }
 
+/*
+	TODO List:
+		1. Use CAN PROTOCOL to upload file dir
+		2. Remove data access methods from DeOSS
+		3. Selector add credit selection
+*/
+
 func (c *Client) UploadDirAsBoxFile(territory, bucket, fname, dir, cipher string, callback func(UploadStats)) (string, []byte, error) {
 
 	box, fpath, err := c.CreateAFileBox(fname, dir)
@@ -365,6 +372,7 @@ func (c *Client) QuerySegmentFromCachers(fileHash, segmentHash string, cacherNum
 	if err != nil {
 		return nil, err
 	}
+	// TODO: Query and access data providers
 	pubkey := crypto.CompressPubkey(&c.ethAccSk.PublicKey)
 	wg := sync.WaitGroup{}
 	lock := sync.Mutex{}
@@ -413,6 +421,7 @@ func (c *Client) DownloadSegmentFromCachers(fileHash, segmentHash, fdir string, 
 	pubkey := crypto.CompressPubkey(&c.ethAccSk.PublicKey)
 	wg := sync.WaitGroup{}
 	wg.Add(len(cachedPeer))
+	// TODO: Query and access data providers
 	for id, resp := range cachedPeer {
 		go func(id peer.ID, fragments []string, acc []byte) {
 			defer wg.Done()

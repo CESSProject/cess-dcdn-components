@@ -25,6 +25,18 @@ import (
 	"github.com/pkg/errors"
 )
 
+type CacheEventRecords struct {
+	types.EventRecords
+	CacheToken_Owner_of        types.AccountID
+	CacheToken_MintToken       []MintToken
+	CacheProtocol_NodeInfo     []NodeInfo
+	CacheProtocol_OrderInfo    []OrderInfo
+	CacheProtocol_Staking      []Staking
+	CacheProtocol_OrderPayment []OrderPayment
+	CacheProtocol_Claim        []Claim
+	CacheProtocol_Exit         []Exit
+}
+
 func (c *chainClient) SubmitExtrinsic(method string,
 	callback func(events CacheEventRecords) bool, args ...any) (string, error) {
 
@@ -45,8 +57,10 @@ func (c *chainClient) SubmitExtrinsic(method string,
 	if call, err := types.NewCall(c.metadata, method, args...); err != nil {
 		return txhash, errors.Wrap(err, "submit extrinsic error")
 	} else {
+
 		ext = types.NewExtrinsic(call)
 	}
+
 	accInfo, err := c.GetAccountInfo()
 	if err != nil {
 		return txhash, errors.Wrap(err, "submit extrinsic error")
@@ -60,11 +74,13 @@ func (c *chainClient) SubmitExtrinsic(method string,
 		Tip:                types.NewUCompactFromUInt(0),
 		TransactionVersion: c.runtimeVersion.TransactionVersion,
 	}
+
 	// Sign the transaction
 	if err = ext.Sign(c.keyring, o); err != nil {
 		return txhash, errors.Wrap(err, "submit extrinsic error")
 	}
 	// Do the transfer and track the actual status
+
 	sub, err := c.api.RPC.Author.SubmitAndWatchExtrinsic(ext)
 	if err != nil {
 		if !strings.Contains(err.Error(), "Priority is too low") {
@@ -111,14 +127,4 @@ func (c *chainClient) SubmitExtrinsic(method string,
 			return txhash, errors.Wrap(ERR_RPC_TIMEOUT, "submit extrinsic error")
 		}
 	}
-}
-
-func (c *chainClient) CreateAndSendCacheBills(bills []Bill) (string, error) {
-	return c.SubmitExtrinsic(
-		CACHER_PAY,
-		func(events CacheEventRecords) bool {
-			return len(events.Cacher_Pay) > 0
-		},
-		bills,
-	)
 }

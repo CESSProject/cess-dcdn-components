@@ -63,7 +63,7 @@ func cmd_run() *cobra.Command {
 func cmd_exit_network() *cobra.Command {
 	return &cobra.Command{
 		Use:                   "exit",
-		Short:                 "exit node from CESS CDN network and redeem staking",
+		Short:                 "exit node from CDepin CDN network and redeem staking",
 		DisableFlagsInUseLine: true,
 		Run:                   cmd_exit_func,
 	}
@@ -201,7 +201,7 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 	}
 
 	cacheModule := cacher.NewCacher(
-		time.Duration(conf.Expiration)*time.Minute,
+		time.Duration(conf.Expiration)*time.Minute, //when exp <=0, item never be deleted
 		conf.CacheSize,
 		conf.CacheDir,
 	)
@@ -341,13 +341,13 @@ func cmd_run_func(cmd *cobra.Command, args []string) {
 	}()
 
 	log.Println("cache node network profix", peerNode.ProtocolPrefix)
-	logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Info("🚀 CESS CDN cache service is running ...")
-	log.Println("🚀 CESS CDN cache service is running ...")
+	logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Info("🚀 CDepin CDN cache service is running ...")
+	log.Println("🚀 CDepin CDN cache service is running ...")
 
 	cacher.RunDownloadServer(ctx, 0) //automatically allocate download threads
 
-	logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Info("🔚 CESS CDN cache service done.")
-	log.Println("🔚 CESS CDN cache service done.")
+	logger.GetGlobalLogger().GetLogger(types.LOG_NODE).Info("🔚 CDepin CDN cache service done.")
+	log.Println("🔚 CDepin CDN cache service done.")
 }
 
 func Ternary(a, b int64) int64 {

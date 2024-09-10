@@ -75,21 +75,21 @@ func TestQueryCacheNodes(t *testing.T) {
 	for {
 		t.Log("peers: ", cli.CacheCli.Peerstore().Peers().Len())
 		//cli.PeerNode.GetDHTable().FindProviders()
-		bPeerId, err := base58.Decode("12D3KooWRWnGtKeMT7AZchjfkavhS3uWKo4tDgc8T2nUaswNHCGN") //12D3KooWLK8DUHynHLxiPpoDtmEKh85Hs95V7mGNfUAZk4muFwJV
+		bPeerId, err := base58.Decode("12D3KooWQgrQLZ3x9WC43z9wFoJ6oZvTUVEqbZfkdF1kywfVinVp") //12D3KooWLK8DUHynHLxiPpoDtmEKh85Hs95V7mGNfUAZk4muFwJV
 		if err != nil {
 			t.Log("register cache node error", err)
 			continue
 		}
-		t.Log("request 12D3KooWRWnGtKeMT7AZchjfkavhS3uWKo4tDgc8T2nUaswNHCGN")
+		t.Log("request 12D3KooWQgrQLZ3x9WC43z9wFoJ6oZvTUVEqbZfkdF1kywfVinVp")
 		resp, err := cdnlib.QueryFileInfoFromCache(
 			cli.CacheCli.Host, peer.ID(bPeerId),
 			types.CacheRequest{
 				AccountId: cli.GetPublickey(),
-				WantUrl:   "https://gw.crust-gateway.xyz/ipfs/bafybeicf5cnabenlocs35n56eggjryq277dxstnkpnv6h5lqkidfd7nsqu",
-				// WantFile: path.Join(
-				// 	"8e962f1d4c5567f942c94596448acb3c1194485f4afeee584eb48978340b32cd",
-				// 	"153cecaef9be527209c9be556b89b03c9411b42cfd9875e744f37fbad4997676",
-				// ),
+				//WantUrl:   "https://github.com/CESSProject/Whitepaper/raw/main/cess-whitepaper-v0.9.1.pdf",
+				WantFile: path.Join(
+					"593a6a38d838ea5069e86773c2f3d137d7f0c5a910e52d3cf19446f821321d61",
+					"105bd4642df7434b0438a808ecaac58d43458a9c56fb395d7c25cce33f1f0736",
+				),
 			})
 		if err != nil {
 			t.Log("query cache node file info error", err)
@@ -114,17 +114,20 @@ func TestGetFileCacheNodes(t *testing.T) {
 	for {
 		t.Log("peers: ", cli.CacheCli.Peerstore().Peers().Len())
 		//cli.PeerNode.GetDHTable().FindProviders()
-		bPeerId, err := base58.Decode("12D3KooWRWnGtKeMT7AZchjfkavhS3uWKo4tDgc8T2nUaswNHCGN") //12D3KooWLK8DUHynHLxiPpoDtmEKh85Hs95V7mGNfUAZk4muFwJV
+		bPeerId, err := base58.Decode("12D3KooWQgrQLZ3x9WC43z9wFoJ6oZvTUVEqbZfkdF1kywfVinVp") //12D3KooWLK8DUHynHLxiPpoDtmEKh85Hs95V7mGNfUAZk4muFwJV
 		if err != nil {
 			t.Log("register cache node error", err)
 			continue
 		}
-		t.Log("request 12D3KooWRWnGtKeMT7AZchjfkavhS3uWKo4tDgc8T2nUaswNHCGN")
+		t.Log("request 12D3KooWQgrQLZ3x9WC43z9wFoJ6oZvTUVEqbZfkdF1kywfVinVp")
 		err = cdnlib.DownloadFileFromCache(
-			cli.CacheCli.Host, peer.ID(bPeerId), "./test.mp4",
+			cli.CacheCli.Host, peer.ID(bPeerId), "./test.video",
 			types.CacheRequest{
 				AccountId: cli.GetPublickey(),
-				WantUrl:   "https://gw.crust-gateway.xyz/ipfs/bafybeicf5cnabenlocs35n56eggjryq277dxstnkpnv6h5lqkidfd7nsqu",
+				WantFile: path.Join(
+					"593a6a38d838ea5069e86773c2f3d137d7f0c5a910e52d3cf19446f821321d61",
+					"105bd4642df7434b0438a808ecaac58d43458a9c56fb395d7c25cce33f1f0736",
+				),
 			},
 		)
 		if err != nil {

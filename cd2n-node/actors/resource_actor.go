@@ -160,6 +160,7 @@ func (ra *ResourceActor) Receive(context actor.Context) {
 		n, err := downloadfile(creq.WantUrl, fpath)
 		if err != nil {
 			logger.GetLogger(types.LOG_CACHE).Infof("download resource from %s error %v", creq.WantUrl, err)
+			return
 		}
 		logger.GetLogger(types.LOG_CACHE).Infof("download file %s success, bytes: %d", creq.WantFile, n)
 		context.Send(cacheActor, DownloadResponse{

@@ -457,9 +457,9 @@ func (c *CacheActor) RunDownloadServer(ctx context.Context, threadNum int) {
 				c.dlQueue.Range(func(key, value any) bool {
 					//download file
 					task := value.(DownloadTask)
-					if task.Doing {
-						return true
-					}
+					// if task.Doing {
+					// 	return true
+					// }
 
 					if task.Option == NODE_RESOURCE_CACHE {
 						hashs := strings.Split(task.Source, "/")

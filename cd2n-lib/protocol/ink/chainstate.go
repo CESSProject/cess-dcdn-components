@@ -17,11 +17,23 @@
 package ink
 
 import (
-	"log"
-
 	"github.com/CESSProject/cess-go-sdk/utils"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/types"
 	"github.com/pkg/errors"
+)
+
+// Pallert
+const (
+	_FILEBANK = "FileBank"
+	_SYSTEM   = "System"
+	_CACHER   = "Cacher"
+)
+
+// Chain state
+const (
+	// System
+	_SYSTEM_ACCOUNT = "Account"
+	_SYSTEM_EVENTS  = "Events"
 )
 
 // GetPublicKey returns your own public key
@@ -71,33 +83,6 @@ func (c *chainClient) GetStorageFromChain(target any, prefix, method string, arg
 	return nil
 }
 
-// Query file meta info
-func (c *chainClient) GetFileMetaInfo(fid string) (FileMetaInfo, error) {
-	var (
-		data FileMetaInfo
-		hash FileHash
-	)
-	if len(fid) != len(hash) {
-		return data, errors.New(ERR_Failed)
-	}
-	for i := 0; i < len(hash); i++ {
-		hash[i] = types.U8(fid[i])
-	}
-
-	b, err := types.Encode(hash)
-	if err != nil {
-		return data, errors.Wrap(err, "get file metadata error")
-	}
-	err = c.GetStorageFromChain(&data, _FILEBANK, _FILEMAP_FILEMETA, b)
-	if err != nil {
-		return data, errors.Wrap(err, "get file metadata error")
-	}
-	if len(data.BlockInfo) == 0 || data.Size == 0 {
-		return data, errors.Wrap(errors.New("invalid file metadata"), "get file metadata error")
-	}
-	return data, nil
-}
-
 func (c *chainClient) GetAccountInfo() (types.AccountInfo, error) {
 	var info types.AccountInfo
 	err := c.GetStorageFromChain(
@@ -110,32 +95,4 @@ func (c *chainClient) GetAccountInfo() (types.AccountInfo, error) {
 		return info, errors.Wrap(err, "get account info error")
 	}
 	return info, nil
-}
-
-func (c *chainClient) GetCachers() ([]CacherInfo, error) {
-	var list []CacherInfo
-	key := createPrefixedKey(_CACHER_CACHER, _CACHER)
-	keys, err := c.api.RPC.State.GetKeysLatest(key)
-	if err != nil {
-		return list, errors.Wrap(err, "get cachers info error")
-	}
-	set, err := c.api.RPC.State.QueryStorageAtLatest(keys)
-	if err != nil {
-		return list, errors.Wrap(err, "get cachers info error")
-	}
-	for _, elem := range set {
-		for _, change := range elem.Changes {
-			var cacher CacherInfo
-			if err := types.Decode(change.StorageData, &cacher); err != nil {
-				log.Println(err)
-				continue
-			}
-			list = append(list, cacher)
-		}
-	}
-	return list, nil
-}
-
-func createPrefixedKey(method, prefix string) []byte {
-	return append(xxhash.New128([]byte(prefix)).Sum(nil), xxhash.New128([]byte(method)).Sum(nil)...)
 }

@@ -9,6 +9,7 @@ require (
 	github.com/CESSProject/cess-go-tools v0.2.17
 	github.com/CESSProject/p2p-go v0.4.1-0.20240809013702-e989d204843e
 	github.com/asynkron/protoactor-go v0.0.0-20240413045429-76c172a71a16
+	github.com/centrifuge/go-substrate-rpc-client v2.0.0+incompatible
 	github.com/centrifuge/go-substrate-rpc-client/v4 v4.2.1
 	github.com/ethereum/go-ethereum v1.10.20
 	github.com/ipfs/go-cid v0.4.1
@@ -24,9 +25,11 @@ require (
 	github.com/spf13/viper v1.18.2
 	github.com/syndtr/goleveldb v1.0.1-0.20220614013038-64ee5596c38a
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
+	honnef.co/go/tools v0.0.1-2019.2.3
 )
 
 require (
+	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/ChainSafe/go-schnorrkel v1.0.0 // indirect
 	github.com/Workiva/go-datastructures v1.1.3 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect

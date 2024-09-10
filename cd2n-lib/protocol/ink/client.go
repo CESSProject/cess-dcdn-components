@@ -36,15 +36,27 @@ type IChain interface {
 	GetCessAccount() (string, error)
 	// GetIncomePublicKey returns its stash account public key
 	GetIncomeAccount() string
-	// GetFileMetaInfo returns file metadata by specific fid
-	GetFileMetaInfo(fid string) (FileMetaInfo, error)
-	//
-	GetCachers() ([]CacherInfo, error)
-	//
-	CreateAndSendCacheBills(bills []Bill) (string, error)
+
+	Staking(nodeAcc, tokenAcc types.AccountID, tokenId [32]byte, peerId, sign []byte, value string) (string, error)
+	CacheOrderPayment(nodeAcc types.AccountID, value string) (string, error)
+	OrderClaim(orderId []byte) (string, error)
+	CalimReward() (string, error)
+	Exit() (string, error)
+	IsTokenOwner(acc types.AccountID, tokenId [32]byte) (string, error)
+
+	MintToken(value string) (string, error)
+	Withdraw() (string, error)
+	TransferFrom(tokenId [32]byte, to types.AccountID) (string, error)
+	GetOwnerOf(tokenId [32]byte, acc *([]byte)) (string, error)
 }
 
 var cli IChain
+
+type Config struct {
+	RpcAddr     string
+	AccountSeed string
+	AccountID   string
+}
 
 type chainClient struct {
 	lock            *sync.Mutex
@@ -66,7 +78,7 @@ func GetChainCli() IChain {
 	return cli
 }
 
-func InitChainClient(conf config.Config) error {
+func InitChainClient(conf Config) error {
 	var err error
 	cli, err = NewChainClient(
 		conf.RpcAddr,
@@ -148,7 +160,11 @@ func (c *chainClient) GetChainState() bool {
 }
 
 func (c *chainClient) NewAccountId(pubkey []byte) types.AccountID {
-	return types.NewAccountID(pubkey)
+	acc, err := types.NewAccountID(pubkey)
+	if err != nil {
+		return types.AccountID{}
+	}
+	return *acc
 }
 
 func reconnectChainClient(rpcAddr string) (*gsrpc.SubstrateAPI, error) {

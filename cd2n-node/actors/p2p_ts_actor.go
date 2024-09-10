@@ -6,6 +6,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 )
 
+// Use p2p transfer actor to implement http to p2p request
+
 type Handle func(msg P2pMessage, host host.Host)
 
 type P2pNodeActor struct {
