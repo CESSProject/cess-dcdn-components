@@ -67,7 +67,7 @@ func (c *CacheActor) Receive(context actor.Context) {
 		context.Send(context.Sender(), fpath)
 	case DownloadResponse:
 		resp := context.Message().(DownloadResponse)
-		hash := cdnlib.GetSha256Hash([]byte(resp.Key))
+		hash := cdnlib.GetSha256Hash([]byte(filepath.Base(resp.Key)))
 		err := c.MoveFileToCache(hash, resp.ResrcPath)
 		if err != nil {
 			//log
@@ -203,7 +203,8 @@ func (c *CacheActor) QueryCacheResource(acc, key string, isUrl bool) []string {
 	source := key
 	if isUrl {
 		option = SITE_RESOURCE_CACHE
-		key = cdnlib.GetSha256Hash([]byte(key))
+
+		key = cdnlib.GetSha256Hash([]byte(filepath.Base(key)))
 
 	}
 	req, _ := c.GetFileRecord(key, types.RECORD_REQUESTS)
@@ -367,7 +368,7 @@ func (c *CacheActor) CacheService(s network.Stream) {
 	case types.OPTION_DOWNLOAD:
 		var fname string
 		if extReq.WantUrl != "" {
-			fname = cdnlib.GetSha256Hash([]byte(extReq.WantUrl))
+			fname = cdnlib.GetSha256Hash([]byte(filepath.Base(extReq.WantUrl)))
 		} else {
 			if len(paths) < 3 {
 				WriteJsonResponse(s, types.STATUS_ERROR, "illegal file Id and segment Id")
